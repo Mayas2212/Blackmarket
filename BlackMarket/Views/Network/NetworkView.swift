@@ -6,11 +6,19 @@ struct NetworkView: View {
     @Query private var followed: [FollowedNPC]
     @State private var selectedNPC: NPCDef?
 
+    private var contacts: [NPCDef] {
+        var byID = Dictionary(uniqueKeysWithValues: GameData.npcs.map { ($0.id, $0) })
+        for relation in followed {
+            if let npc = GameData.npc(relation.npcID) { byID[npc.id] = npc }
+        }
+        return byID.values.sorted { $0.name < $1.name }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Your Network") {
-                    ForEach(GameData.npcs) { npc in
+                    ForEach(contacts) { npc in
                         Button { selectedNPC = npc } label: {
                             NPCRow(npc: npc, isFollowing: followed.first { $0.npcID == npc.id }?.isFollowing ?? false)
                         }
@@ -22,6 +30,46 @@ struct NetworkView: View {
             .sheet(item: $selectedNPC) { npc in
                 NPCProfileView(engine: engine, npc: npc)
             }
+        }
+    }
+}
+
+struct MessagesView: View {
+    var engine: GameEngine
+    @Query private var followed: [FollowedNPC]
+    @Query(sort: \MessageRecord.date, order: .reverse) private var allMessages: [MessageRecord]
+    @State private var selectedNPC: NPCDef?
+
+    private var contactIDs: [String] {
+        Array(Set(followed.filter(\.isFollowing).map(\.npcID) + allMessages.map(\.npcID))).sorted()
+    }
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Your conversations") {
+                    if contactIDs.isEmpty {
+                        ContentUnavailableView("No messages yet", systemImage: "bubble.left.and.bubble.right", description: Text("Visit Network and start a conversation with a buyer or seller."))
+                    }
+                    ForEach(contactIDs, id: \.self) { id in
+                        if let npc = GameData.npc(id) {
+                            Button { selectedNPC = npc } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: npc.avatarSymbol).font(.title2).foregroundStyle(.green)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(npc.name).font(.subheadline.bold()).foregroundStyle(.primary)
+                                        Text(allMessages.first(where: { $0.npcID == id })?.text ?? npc.bio)
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                }.padding(.vertical, 4)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Messages")
+            .sheet(item: $selectedNPC) { NPCProfileView(engine: engine, npc: $0) }
         }
     }
 }
@@ -73,7 +121,6 @@ struct NPCProfileView: View {
     @Query private var reviewsAll: [ReviewRecord]
     @Query private var messagesAll: [MessageRecord]
     @Query private var inventoryAll: [InventoryItem]
-    @State private var messageText = ""
     @State private var sellQuantity = 1
     @State private var selectedProductID: String?
 
@@ -134,9 +181,10 @@ struct NPCProfileView: View {
                             if !msg.isFromPlayer { Spacer() }
                         }
                     }
-                    HStack {
-                        TextField("Message...", text: $messageText)
-                        Button("Send") { sendMessage() }.disabled(messageText.isEmpty)
+                    Text("Quick replies")
+                        .font(.caption.bold()).foregroundStyle(.secondary)
+                    ForEach(["What's your best price?", "I can offer a trade.", "Can we discuss payment?", "Is this still available?", "Let's make a deal.", "Thanks, I'll pass for now."], id: \.self) { response in
+                        Button(response) { sendMessage(response) }
                     }
                 }
             }
@@ -182,11 +230,14 @@ struct NPCProfileView: View {
         try? context.save()
     }
 
-    private func sendMessage() {
-        context.insert(MessageRecord(npcID: npc.id, text: messageText, isFromPlayer: true))
-        let reply = ["Deal.", "Let's talk price.", "I'll check back later.", "Sounds good.", "Not interested right now."].randomElement()!
+    private func sendMessage(_ message: String) {
+        context.insert(MessageRecord(npcID: npc.id, text: message, isFromPlayer: true))
+        let reply: String
+        if message.contains("price") || message.contains("payment") { reply = npc.kind == .buyer ? "I can meet you near the current market price." : "I have a little room on the price. What quantity?" }
+        else if message.contains("trade") { reply = "I’m open to a trade. What do you have in mind?" }
+        else if message.contains("available") { reply = npc.kind == .buyer ? "Yes, send over the details and your asking price." : "It is. I can arrange a small batch." }
+        else { reply = "No worries. Message me whenever you want to work something out." }
         context.insert(MessageRecord(npcID: npc.id, text: reply, isFromPlayer: false, date: .now.addingTimeInterval(2)))
-        messageText = ""
         try? context.save()
     }
 

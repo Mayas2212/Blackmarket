@@ -192,6 +192,26 @@ final class PriceOverride {
     }
 }
 
+@Model
+final class PriceSnapshot {
+    var assetID: String
+    var price: Double
+    var date: Date
+
+    init(assetID: String, price: Double, date: Date = .now) {
+        self.assetID = assetID
+        self.price = price
+        self.date = date
+    }
+}
+
+@Model
+final class CryptoHolding {
+    var assetID: String
+    var amount: Double
+    init(assetID: String, amount: Double = 0) { self.assetID = assetID; self.amount = amount }
+}
+
 // MARK: - Progression
 
 @Model

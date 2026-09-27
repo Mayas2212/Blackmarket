@@ -76,6 +76,14 @@ struct ProductDef: Identifiable, Codable, Hashable {
     let icon: String
     let volatility: Double
     let riskTier: Int
+    var fixedPrice: Bool = false
+}
+
+struct CryptoDef: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let symbol: String
+    let initialPrice: Double
 }
 
 struct SupplierDef: Identifiable, Codable, Hashable {
@@ -109,7 +117,7 @@ struct AchievementDef: Identifiable, Codable, Hashable {
 enum GameData {
     static let products: [ProductDef] = [
         ProductDef(id: "p_burner", name: "Burner Phones", category: .electronics, basePrice: 45, unlockLevel: .newcomer, icon: "phone.fill", volatility: 0.05, riskTier: 1),
-        ProductDef(id: "p_watch", name: "Replica Watches", category: .luxury, basePrice: 120, unlockLevel: .newcomer, icon: "clock.fill", volatility: 0.08, riskTier: 1),
+        ProductDef(id: "p_watch", name: "Replica Watches", category: .luxury, basePrice: 120, unlockLevel: .newcomer, icon: "clock.fill", volatility: 0, riskTier: 1, fixedPrice: true),
         ProductDef(id: "p_herb", name: "Herbal Blend", category: .herbal, basePrice: 25, unlockLevel: .runner, icon: "leaf.fill", volatility: 0.15, riskTier: 2),
         ProductDef(id: "p_cards", name: "Rare Trading Cards", category: .collectibles, basePrice: 60, unlockLevel: .runner, icon: "rectangle.stack.fill", volatility: 0.1, riskTier: 1),
         ProductDef(id: "p_pills", name: "Grey Market Supplements", category: .pharma, basePrice: 80, unlockLevel: .reseller, icon: "pills.fill", volatility: 0.2, riskTier: 3),
@@ -120,7 +128,23 @@ enum GameData {
         ProductDef(id: "p_tech2", name: "Prototype Tech", category: .tech, basePrice: 1200, unlockLevel: .broker, icon: "cpu.fill", volatility: 0.28, riskTier: 4),
         ProductDef(id: "p_gold", name: "Gold Bars", category: .luxury, basePrice: 2200, unlockLevel: .established, icon: "square.stack.3d.up.fill", volatility: 0.12, riskTier: 2),
         ProductDef(id: "p_ledger", name: "Offshore Ledgers", category: .documents, basePrice: 3500, unlockLevel: .trusted, icon: "book.closed.fill", volatility: 0.3, riskTier: 5),
-        ProductDef(id: "p_chip", name: "Encrypted Chips", category: .tech, basePrice: 5000, unlockLevel: .elite, icon: "memorychip.fill", volatility: 0.32, riskTier: 5)
+        ProductDef(id: "p_chip", name: "Encrypted Chips", category: .tech, basePrice: 5000, unlockLevel: .elite, icon: "memorychip.fill", volatility: 0.32, riskTier: 5),
+        ProductDef(id: "p_vinyl", name: "Limited Vinyl Records", category: .collectibles, basePrice: 85, unlockLevel: .newcomer, icon: "opticaldisc.fill", volatility: 0.09, riskTier: 1),
+        ProductDef(id: "p_console", name: "Retro Game Consoles", category: .electronics, basePrice: 175, unlockLevel: .newcomer, icon: "gamecontroller.fill", volatility: 0.11, riskTier: 1),
+        ProductDef(id: "p_sneakers", name: "Collector Sneakers", category: .collectibles, basePrice: 240, unlockLevel: .runner, icon: "shoe.fill", volatility: 0.16, riskTier: 2),
+        ProductDef(id: "p_camera", name: "Vintage Cameras", category: .electronics, basePrice: 320, unlockLevel: .runner, icon: "camera.fill", volatility: 0.12, riskTier: 1),
+        ProductDef(id: "p_watch_real", name: "Luxury Watches", category: .luxury, basePrice: 1800, unlockLevel: .reseller, icon: "watch.analog", volatility: 0.1, riskTier: 2),
+        ProductDef(id: "p_counterfeit", name: "Counterfeit Luxury Watches", category: .luxury, basePrice: 140, unlockLevel: .newcomer, icon: "clock.badge.xmark", volatility: 0, riskTier: 2, fixedPrice: true),
+        ProductDef(id: "p_antiques", name: "Vintage Antiques", category: .collectibles, basePrice: 650, unlockLevel: .dealer, icon: "lamp.desk.fill", volatility: 0.13, riskTier: 2),
+        ProductDef(id: "p_artprint", name: "Rare Art Prints", category: .collectibles, basePrice: 1100, unlockLevel: .broker, icon: "photo.artframe", volatility: 0.18, riskTier: 2)
+    ]
+
+    static let cryptocurrencies: [CryptoDef] = [
+        CryptoDef(id: "BTC_RATE", name: "Bitcoin", symbol: "₿", initialPrice: 42000),
+        CryptoDef(id: "SMP_RATE", name: "SMP300", symbol: "SMP", initialPrice: 320),
+        CryptoDef(id: "ETH_RATE", name: "Ether", symbol: "Ξ", initialPrice: 2400),
+        CryptoDef(id: "SOL_RATE", name: "Solana", symbol: "◎", initialPrice: 145),
+        CryptoDef(id: "DOGE_RATE", name: "Dogecoin", symbol: "Ð", initialPrice: 0.16)
     ]
 
     static let suppliers: [SupplierDef] = [
@@ -141,7 +165,11 @@ enum GameData {
         NPCDef(id: "n_ivy", name: "Ivy Chen", avatarSymbol: "person.crop.circle.fill.badge.plus", kind: .rival, bio: "Rival reseller. Watch your prices.", baseRatingSeed: 3),
         NPCDef(id: "n_omar", name: "Omar R.", avatarSymbol: "person.circle", kind: .seller, bio: "Tech sourcing, prototype gear.", baseRatingSeed: 4),
         NPCDef(id: "n_sasha", name: "Sasha B.", avatarSymbol: "person.crop.circle.badge.moon", kind: .buyer, bio: "High roller. Buys in bulk.", baseRatingSeed: 5),
-        NPCDef(id: "n_the_broker", name: "The Broker", avatarSymbol: "person.crop.square.fill", kind: .seller, bio: "Only deals with trusted names.", baseRatingSeed: 5)
+        NPCDef(id: "n_the_broker", name: "The Broker", avatarSymbol: "person.crop.square.fill", kind: .seller, bio: "Only deals with trusted names.", baseRatingSeed: 5),
+        NPCDef(id: "n_mina", name: "Mina R.", avatarSymbol: "person.crop.circle", kind: .buyer, bio: "Vintage finds and collectible records.", baseRatingSeed: 5),
+        NPCDef(id: "n_jules", name: "Jules", avatarSymbol: "person.circle.fill", kind: .seller, bio: "Sneakers, cameras, and retro games.", baseRatingSeed: 4),
+        NPCDef(id: "n_aria", name: "Aria S.", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Curates a growing luxury collection.", baseRatingSeed: 5),
+        NPCDef(id: "n_niko", name: "Niko", avatarSymbol: "person.circle", kind: .seller, bio: "Antiques and one-of-a-kind pieces.", baseRatingSeed: 4)
     ]
 
     static let achievements: [AchievementDef] = [
@@ -154,10 +182,24 @@ enum GameData {
         AchievementDef(id: "a_10_deals", title: "Getting Busy", description: "Complete 10 total deals.", icon: "arrow.left.arrow.right.circle.fill"),
         AchievementDef(id: "a_100_deals", title: "Well Connected", description: "Complete 100 total deals.", icon: "person.3.fill"),
         AchievementDef(id: "a_elite", title: "Top of the Chain", description: "Reach ELITE seller level.", icon: "flame.fill"),
-        AchievementDef(id: "a_btc", title: "Off the Books", description: "Trade BTC for the first time.", icon: "bitcoinsign.circle.fill")
+        AchievementDef(id: "a_btc", title: "Off the Books", description: "Trade BTC for the first time.", icon: "bitcoinsign.circle.fill"),
+        AchievementDef(id: "a_5_listings", title: "Shopfront", description: "Create five profile listings.", icon: "storefront.fill"),
+        AchievementDef(id: "a_10_followers", title: "Rising Profile", description: "Build your network to 25 followers.", icon: "person.2.badge.plus.fill"),
+        AchievementDef(id: "a_5_coins", title: "Altcoin Collector", description: "Buy a simulated coin besides Bitcoin.", icon: "bitcoinsign"),
+        AchievementDef(id: "a_20k_profit", title: "Market Maker", description: "Reach $20,000 net worth.", icon: "chart.xyaxis.line"),
+        AchievementDef(id: "a_5_contacts", title: "People Person", description: "Follow five contacts.", icon: "person.3.sequence.fill")
     ]
 
     static func product(_ id: String) -> ProductDef? { products.first { $0.id == id } }
     static func supplier(_ id: String) -> SupplierDef? { suppliers.first { $0.id == id } }
-    static func npc(_ id: String) -> NPCDef? { npcs.first { $0.id == id } }
+    static func npc(_ id: String) -> NPCDef? {
+        if let known = npcs.first(where: { $0.id == id }) { return known }
+        guard id.hasPrefix("n_generated_"), let index = Int(id.replacingOccurrences(of: "n_generated_", with: "")), index > 0 else { return nil }
+        let firstNames = ["Riley", "Casey", "Morgan", "Taylor", "Jordan", "Avery", "Quinn", "Rowan", "Emery", "Skyler"]
+        let surnames = ["Vale", "Park", "Reed", "Lane", "Hayes", "Blake", "Sage", "Wren", "Ellis", "Gray"]
+        let name = "\(firstNames[(index - 1) % firstNames.count]) \(surnames[((index - 1) / firstNames.count) % surnames.count])\(index > 100 ? " \(index)" : "")"
+        let kind: NPCKind = index.isMultiple(of: 2) ? .buyer : .seller
+        let bio = kind == .buyer ? "New collector looking for good finds." : "Independent seller with fresh stock."
+        return NPCDef(id: id, name: name, avatarSymbol: "person.crop.circle.fill", kind: kind, bio: bio, baseRatingSeed: 4)
+    }
 }

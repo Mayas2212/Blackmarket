@@ -10,6 +10,7 @@ struct ProfileView: View {
     @Query private var inventoryAll: [InventoryItem]
     @State private var tapCount = 0
     @State private var showCreateListing = false
+    @State private var showSettings = false
 
     private var player: PlayerState? { players.first }
 
@@ -28,9 +29,11 @@ struct ProfileView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Profile")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { showSettings = true } label: { Image(systemName: "gearshape") } } }
             .sheet(isPresented: $showCreateListing) {
                 CreateListingView(engine: engine)
             }
+            .sheet(isPresented: $showSettings) { SettingsView(engine: engine, showAdmin: $showAdmin) }
         }
     }
 
@@ -49,6 +52,8 @@ struct ProfileView: View {
                 VStack { Text("\(player.following)").bold(); Text("Following").font(.caption2).foregroundStyle(.secondary) }
                 VStack { Text("\(player.reputation)").bold(); Text("Reputation").font(.caption2).foregroundStyle(.secondary) }
             }
+            Text("\(player.reputation >= 0 ? "★" : "☆")  Trust score · \(player.reputation)")
+                .font(.caption.bold()).foregroundStyle(player.reputation >= 0 ? .orange : .red)
         }
         .frame(maxWidth: .infinity)
         .cardStyle()
@@ -125,8 +130,60 @@ struct ProfileView: View {
         tapCount += 1
         if tapCount >= 7 {
             tapCount = 0
+            if let player {
+                player.isDevModeUnlocked = true
+                try? engine.context.save()
+            }
             showAdmin = true
         }
+    }
+}
+
+struct SettingsView: View {
+    var engine: GameEngine
+    @Binding var showAdmin: Bool
+    @Environment(\.dismiss) private var dismiss
+    @Query private var players: [PlayerState]
+    @AppStorage("blackmarket.darkMode") private var darkMode = false
+    @AppStorage("blackmarket.accent") private var accent = "green"
+    @State private var username = ""
+    private var player: PlayerState? { players.first }
+    private let avatars = ["person.crop.circle.fill", "person.fill", "person.crop.circle", "person.crop.square.fill", "theatermasks.fill", "star.circle.fill"]
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Profile") {
+                    TextField("Username", text: $username).textInputAutocapitalization(.never)
+                    Picker("Avatar", selection: Binding(get: { player?.avatarSymbol ?? avatars[0] }, set: { player?.avatarSymbol = $0; try? engine.context.save() })) {
+                        ForEach(avatars, id: \.self) { avatar in Label(avatar.capitalized, systemImage: avatar).tag(avatar) }
+                    }
+                }
+                Section("Appearance") {
+                    Toggle("Dark appearance", isOn: $darkMode)
+                    Picker("Accent color", selection: $accent) {
+                        Text("Green").tag("green"); Text("Blue").tag("blue"); Text("Purple").tag("purple"); Text("Orange").tag("orange")
+                    }
+                }
+                Section("Developer tools") {
+                    if player?.isDevModeUnlocked == true {
+                        Button("Open developer settings") { dismiss(); showAdmin = true }
+                    } else {
+                        Text("Tap your profile avatar seven times to unlock developer settings.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section { Text("Market prices update once per day. Crypto and game prices are simulated.").font(.caption).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { save(); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save(); dismiss() } }
+            }
+            .onAppear { username = player?.username ?? "" }
+            .preferredColorScheme(darkMode ? .dark : .light)
+        }
+    }
+    private func save() {
+        if let player { player.username = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "you_underground" : username; try? engine.context.save() }
     }
 }
 

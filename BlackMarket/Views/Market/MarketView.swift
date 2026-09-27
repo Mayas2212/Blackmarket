@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 
 struct MarketView: View {
     var engine: GameEngine
@@ -7,6 +8,7 @@ struct MarketView: View {
     @Query private var priceOverrides: [PriceOverride]
     @State private var selectedCategory: ProductCategory?
     @State private var selectedProduct: ProductDef?
+    @State private var selectedCoinID: String?
 
     private var player: PlayerState? { players.first }
 
@@ -20,6 +22,7 @@ struct MarketView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                cryptoSection
                 categoryFilter
                 LazyVStack(spacing: 12) {
                     ForEach(availableProducts) { product in
@@ -36,7 +39,38 @@ struct MarketView: View {
             .sheet(item: $selectedProduct) { product in
                 BuySheet(engine: engine, product: product)
             }
+            .sheet(isPresented: Binding(get: { selectedCoinID != nil }, set: { if !$0 { selectedCoinID = nil } })) {
+                if let id = selectedCoinID, let coin = GameData.cryptocurrencies.first(where: { $0.id == id }) {
+                    CryptoTradeSheet(engine: engine, coin: coin)
+                }
+            }
         }
+    }
+
+    private var cryptoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Crypto Market").font(.headline)
+            Text("Simulated coins · prices move once each night").font(.caption).foregroundStyle(.secondary)
+            ForEach(GameData.cryptocurrencies, id: \.id) { coin in
+                let history = engine.priceHistory(for: coin.id)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(coin.symbol)  \(coin.name)").font(.subheadline.bold())
+                        Spacer()
+                        Text(Formatters.moneyPrecise(engine.price(for: coin.id))).font(.subheadline.bold())
+                        TrendArrow(trend: priceOverrides.first { $0.productID == coin.id }?.trend ?? 0)
+                    }
+                    HStack {
+                        Text("You own: \(String(format: "%.5f", engine.cryptoAmount(coin.id))) \(coin.symbol)").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Trade") { selectedCoinID = coin.id }.font(.caption.bold()).buttonStyle(.borderedProminent)
+                    }
+                    PriceLineChart(history: history, color: .orange)
+                }
+                .padding(12).background(Color(.secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding()
     }
 
     private func trend(for productID: String) -> Double {
@@ -67,6 +101,55 @@ struct MarketView: View {
                 .foregroundStyle(selectedCategory == cat ? .green : .primary)
                 .clipShape(Capsule())
         }
+    }
+}
+
+struct CryptoTradeSheet: View {
+    var engine: GameEngine
+    let coin: CryptoDef
+    @Environment(\.dismiss) private var dismiss
+    @Query private var players: [PlayerState]
+    @State private var usdAmount = 100.0
+    @State private var coinAmount = 0.01
+    private var player: PlayerState? { players.first }
+    private var rate: Double { engine.price(for: coin.id) }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("\(coin.name) · simulated only") {
+                    LabeledContent("Rate", value: Formatters.moneyPrecise(rate))
+                    LabeledContent("Owned", value: "\(String(format: "%.6f", engine.cryptoAmount(coin.id))) \(coin.symbol)")
+                }
+                Section("Buy") {
+                    TextField("USD amount", value: $usdAmount, format: .number).keyboardType(.decimalPad)
+                    Text("Receive about \(String(format: "%.6f", usdAmount / max(rate, 0.000001))) \(coin.symbol)").font(.caption).foregroundStyle(.secondary)
+                    Button("Buy \(coin.name)") { if coin.id == "BTC_RATE" { _ = engine.buyBTC(usdAmount: usdAmount) } else { _ = engine.buyCrypto(assetID: coin.id, usdAmount: usdAmount) } }
+                        .disabled((player?.cashUSD ?? 0) < usdAmount || usdAmount <= 0)
+                }
+                Section("Sell") {
+                    TextField("Coin amount", value: $coinAmount, format: .number).keyboardType(.decimalPad)
+                    Text("Receive about \(Formatters.moneyPrecise(coinAmount * rate))").font(.caption).foregroundStyle(.secondary)
+                    Button("Sell \(coin.name)") { if coin.id == "BTC_RATE" { _ = engine.sellBTC(btcAmount: coinAmount) } else { _ = engine.sellCrypto(assetID: coin.id, amount: coinAmount) } }
+                        .disabled(engine.cryptoAmount(coin.id) < coinAmount || coinAmount <= 0)
+                }
+            }
+            .navigationTitle("Crypto trade")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+    }
+}
+
+struct PriceLineChart: View {
+    let history: [PriceSnapshot]
+    var color: Color = .green
+    var body: some View {
+        Chart(history) { point in
+            LineMark(x: .value("Day", point.date), y: .value("Price", point.price))
+                .foregroundStyle(color.gradient).interpolationMethod(.catmullRom)
+            AreaMark(x: .value("Day", point.date), y: .value("Price", point.price))
+                .foregroundStyle(color.opacity(0.12).gradient)
+        }
+        .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 62)
     }
 }
 
@@ -129,6 +212,8 @@ struct BuySheet: View {
                     }
                     Text("Market price: \(Formatters.moneyPrecise(engine.price(for: product.id)))")
                         .font(.caption).foregroundStyle(.secondary)
+                    Text(product.fixedPrice ? "Fixed-price item" : "Daily market price").font(.caption2).foregroundStyle(.secondary)
+                    PriceLineChart(history: engine.priceHistory(for: product.id))
                 }
                 Section("Supplier") {
                     if suppliers.isEmpty {

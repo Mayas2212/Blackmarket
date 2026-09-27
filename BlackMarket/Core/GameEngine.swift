@@ -30,10 +30,15 @@ final class GameEngine {
         for product in GameData.products where !existingIDs.contains(product.id) {
             context.insert(PriceOverride(productID: product.id, currentPrice: product.basePrice))
         }
-        let btcID = "BTC_RATE"
-        if !existingIDs.contains(btcID) {
-            context.insert(PriceOverride(productID: btcID, currentPrice: 42000))
+        for coin in GameData.cryptocurrencies where !existingIDs.contains(coin.id) {
+            context.insert(PriceOverride(productID: coin.id, currentPrice: coin.initialPrice))
         }
+        let snapshots = (try? context.fetch(FetchDescriptor<PriceSnapshot>())) ?? []
+        if snapshots.isEmpty {
+            for product in GameData.products { context.insert(PriceSnapshot(assetID: product.id, price: product.basePrice)) }
+            for coin in GameData.cryptocurrencies { context.insert(PriceSnapshot(assetID: coin.id, price: coin.initialPrice)) }
+        }
+        try? context.save()
     }
 
     private func seedAchievementsIfNeeded() {
@@ -60,6 +65,42 @@ final class GameEngine {
     }
 
     func btcRate() -> Double { price(for: "BTC_RATE") }
+
+    func cryptoAmount(_ assetID: String) -> Double {
+        if assetID == "BTC_RATE" { return fetchPlayer().btc }
+        let holdings = (try? context.fetch(FetchDescriptor<CryptoHolding>())) ?? []
+        return holdings.first { $0.assetID == assetID }?.amount ?? 0
+    }
+
+    @discardableResult
+    func buyCrypto(assetID: String, usdAmount: Double) -> Bool {
+        guard assetID != "BTC_RATE", GameData.cryptocurrencies.contains(where: { $0.id == assetID }), usdAmount > 0 else { return false }
+        let player = fetchPlayer()
+        guard player.cashUSD >= usdAmount else { return false }
+        player.cashUSD -= usdAmount
+        let holdings = (try? context.fetch(FetchDescriptor<CryptoHolding>())) ?? []
+        let amount = usdAmount / max(price(for: assetID), 0.000001)
+        if let holding = holdings.first(where: { $0.assetID == assetID }) { holding.amount += amount }
+        else { context.insert(CryptoHolding(assetID: assetID, amount: amount)) }
+        context.insert(TransactionRecord(type: .btcTrade, total: -usdAmount, note: "Bought \(GameData.cryptocurrencies.first { $0.id == assetID }?.name ?? "coin")"))
+        checkAchievements()
+        try? context.save()
+        return true
+    }
+
+    @discardableResult
+    func sellCrypto(assetID: String, amount: Double) -> Bool {
+        guard assetID != "BTC_RATE", amount > 0 else { return false }
+        let holdings = (try? context.fetch(FetchDescriptor<CryptoHolding>())) ?? []
+        guard let holding = holdings.first(where: { $0.assetID == assetID }), holding.amount >= amount else { return false }
+        holding.amount -= amount
+        let proceeds = amount * price(for: assetID)
+        fetchPlayer().cashUSD += proceeds
+        if holding.amount < 0.00000001 { context.delete(holding) }
+        context.insert(TransactionRecord(type: .btcTrade, total: proceeds, note: "Sold \(GameData.cryptocurrencies.first { $0.id == assetID }?.name ?? "coin")"))
+        try? context.save()
+        return true
+    }
 
     func inventory() -> [InventoryItem] {
         (try? context.fetch(FetchDescriptor<InventoryItem>())) ?? []
@@ -102,7 +143,6 @@ final class GameEngine {
         }
 
         context.insert(TransactionRecord(type: .buy, productID: productID, quantity: quantity, unitPrice: unitPrice, total: -total, note: "Bought from \(supplier?.name ?? "market")"))
-        nudgePricesAfterTrade(productID: productID, isBuy: true, quantity: quantity)
         try? context.save()
         return true
     }
@@ -131,13 +171,27 @@ final class GameEngine {
         player.xp += repGain
         applyLevelUpIfNeeded(player: player)
 
-        if let npcID, let rel = fetchFollowed(npcID: npcID) {
-            rel.relationship += 1
+        if let npcID {
+            if let rel = fetchFollowed(npcID: npcID) {
+                rel.relationship += 1
+            } else {
+                context.insert(FollowedNPC(npcID: npcID, isFollowing: true, relationship: 1))
+                player.following += 1
+                player.followers += 1
+            }
         }
 
         let noteName = npcID.flatMap { GameData.npc($0)?.name }
+        let saleCount = transactions().filter { $0.type == .sell || $0.type == .listingSale }.count + 1
         context.insert(TransactionRecord(type: .sell, productID: productID, quantity: quantity, unitPrice: unitPrice, total: total, note: noteName.map { "Sold to \($0)" } ?? "Sold on market"))
-        nudgePricesAfterTrade(productID: productID, isBuy: false, quantity: quantity)
+        if saleCount.isMultiple(of: 3) {
+            let contactID = "n_generated_\(saleCount / 3)"
+            if fetchFollowed(npcID: contactID) == nil {
+                context.insert(FollowedNPC(npcID: contactID, isFollowing: true))
+                player.followers += 1
+                player.following += 1
+            }
+        }
         checkAchievements()
         try? context.save()
         return true
@@ -153,6 +207,8 @@ final class GameEngine {
         item.quantity -= quantity
         if item.quantity == 0 { context.delete(item) }
         context.insert(ListingItem(productID: productID, quantity: quantity, price: price))
+        context.insert(TransactionRecord(type: .event, total: 0, note: "Profile listing created"))
+        checkAchievements()
         try? context.save()
         return true
     }
@@ -168,9 +224,14 @@ final class GameEngine {
         try? context.save()
     }
 
-    /// Simulates NPC demand against active listings, drifts prices, may trigger an event.
-    /// Called on view appear / pull-to-refresh so the world feels alive without a real-time clock.
+    /// Prices are fixed for the whole local calendar day and roll once after midnight.
     func simulateMarketTick() {
+        let overrides = (try? context.fetch(FetchDescriptor<PriceOverride>())) ?? []
+        let btc = overrides.first { $0.productID == "BTC_RATE" }
+        let shouldRoll = btc.map { !Calendar.current.isDate($0.lastUpdated, inSameDayAs: .now) } ?? false
+        if shouldRoll {
+            refreshMarketPrices()
+        }
         let player = fetchPlayer()
         let activeListings = listings().filter { $0.isActive }
         for listing in activeListings {
@@ -180,16 +241,23 @@ final class GameEngine {
             if Double.random(in: 0...1) < sellChance {
                 let total = listing.price * Double(listing.quantity)
                 player.cashUSD += total
-                player.reputation += max(1, listing.quantity)
-                player.xp += max(1, listing.quantity)
-                context.insert(TransactionRecord(type: .listingSale, productID: listing.productID, quantity: listing.quantity, unitPrice: listing.price, total: total, note: "Listing sold"))
+                let inflatedReplica = GameData.product(listing.productID)?.fixedPrice == true && listing.price > marketPrice * 2.5
+                let exposed = inflatedReplica && Double.random(in: 0...1) < 0.3
+                if exposed {
+                    player.reputation = max(0, player.reputation - 15)
+                    player.followers = max(0, player.followers - 1)
+                    context.insert(ReviewRecord(npcID: GameData.npcs.randomElement()?.id ?? "n_marco", rating: 1, text: "Listing did not match its description."))
+                } else {
+                    player.reputation += max(1, listing.quantity)
+                    player.xp += max(1, listing.quantity)
+                }
+                context.insert(TransactionRecord(type: .listingSale, productID: listing.productID, quantity: listing.quantity, unitPrice: listing.price, total: total, note: exposed ? "Buyer left a poor review: item was misrepresented" : "Listing sold"))
                 context.delete(listing)
             }
         }
         applyLevelUpIfNeeded(player: player)
         if Double.random(in: 0...1) < 0.3 { player.followers += Int.random(in: 0...2) }
-        maybeTriggerEvent()
-        refreshMarketPrices()
+        if shouldRoll { maybeTriggerEvent() }
         checkAchievements()
         try? context.save()
     }
@@ -218,27 +286,30 @@ final class GameEngine {
     func refreshMarketPrices() {
         let overrides = (try? context.fetch(FetchDescriptor<PriceOverride>())) ?? []
         for override in overrides {
-            if override.productID == "BTC_RATE" {
+            if let coin = GameData.cryptocurrencies.first(where: { $0.id == override.productID }) {
                 let change = Double.random(in: -0.03...0.03)
-                override.currentPrice = max(1000, override.currentPrice * (1 + change))
+                override.currentPrice = max(coin.initialPrice * 0.2, override.currentPrice * (1 + change))
                 override.trend = change
                 override.lastUpdated = .now
+                context.insert(PriceSnapshot(assetID: override.productID, price: override.currentPrice))
                 continue
             }
             guard let product = GameData.product(override.productID) else { continue }
+            override.lastUpdated = .now
+            if product.fixedPrice { override.trend = 0; continue }
             let change = Double.random(in: -product.volatility...product.volatility)
             let newPrice = max(product.basePrice * 0.4, min(product.basePrice * 2.2, override.currentPrice * (1 + change)))
             override.trend = change
             override.currentPrice = newPrice
-            override.lastUpdated = .now
+            context.insert(PriceSnapshot(assetID: override.productID, price: newPrice))
         }
+        try? context.save()
     }
 
-    private func nudgePricesAfterTrade(productID: String, isBuy: Bool, quantity: Int) {
-        let overrides = (try? context.fetch(FetchDescriptor<PriceOverride>())) ?? []
-        guard let override = overrides.first(where: { $0.productID == productID }) else { return }
-        let impact = Double(quantity) * 0.002 * (isBuy ? 1 : -1)
-        override.currentPrice = max(1, override.currentPrice * (1 + impact))
+    func priceHistory(for assetID: String, days: Int = 30) -> [PriceSnapshot] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .distantPast
+        let all = (try? context.fetch(FetchDescriptor<PriceSnapshot>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return all.filter { $0.assetID == assetID && $0.date >= cutoff }
     }
 
     // MARK: - Random events
@@ -253,7 +324,7 @@ final class GameEngine {
 
     @discardableResult
     func triggerRandomEvent() -> ActiveMarketEvent {
-        let product = GameData.products.randomElement()!
+        let product = GameData.products.filter { !$0.fixedPrice }.randomElement()!
         let isPositive = Bool.random()
         let multiplier = isPositive ? Double.random(in: 1.15...1.5) : Double.random(in: 0.6...0.85)
         let title = isPositive ? "Demand Spike: \(product.name)" : "Market Crackdown: \(product.name)"
@@ -263,6 +334,8 @@ final class GameEngine {
         let overrides = (try? context.fetch(FetchDescriptor<PriceOverride>())) ?? []
         if let override = overrides.first(where: { $0.productID == product.id }) {
             override.currentPrice *= multiplier
+            override.trend = multiplier - 1
+            context.insert(PriceSnapshot(assetID: product.id, price: override.currentPrice))
         }
         try? context.save()
         return event
@@ -292,6 +365,12 @@ final class GameEngine {
         if player.reputation >= 1000 { unlock("a_rep_1000") }
         if player.level == .elite { unlock("a_elite") }
         if player.btc > 0 { unlock("a_btc") }
+        if player.followers >= 25 { unlock("a_10_followers") }
+        if netWorth >= 20000 { unlock("a_20k_profit") }
+        if ((try? context.fetch(FetchDescriptor<CryptoHolding>())) ?? []).contains(where: { $0.amount > 0 }) { unlock("a_5_coins") }
+        let contactCount = ((try? context.fetch(FetchDescriptor<FollowedNPC>())) ?? []).filter { $0.isFollowing }.count
+        if contactCount >= 5 { unlock("a_5_contacts") }
+        if transactions().filter({ $0.type == .event && $0.note == "Profile listing created" }).count >= 5 { unlock("a_5_listings") }
     }
 
     // MARK: - BTC exchange (simulated only, never real payments)
@@ -459,6 +538,8 @@ final class GameEngine {
         deleteAll(MessageRecord.self)
         deleteAll(ActiveMarketEvent.self)
         deleteAll(PriceOverride.self)
+        deleteAll(PriceSnapshot.self)
+        deleteAll(CryptoHolding.self)
         deleteAll(AchievementRecord.self)
         deleteAll(DailyObjective.self)
         try? context.save()
