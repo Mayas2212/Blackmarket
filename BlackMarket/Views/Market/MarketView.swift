@@ -29,13 +29,16 @@ struct MarketView: View {
                         Button { selectedProduct = product } label: {
                             ProductRow(product: product, price: engine.price(for: product.id), trend: trend(for: product.id))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressFeedbackStyle())
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding()
+                .animation(.snappy(duration: 0.28), value: availableProducts.map(\.id))
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Market")
+            .sensoryFeedback(.selection, trigger: selectedCategory)
             .sheet(item: $selectedProduct) { product in
                 BuySheet(engine: engine, product: product)
             }
@@ -92,7 +95,7 @@ struct MarketView: View {
 
     private func categoryChip(_ cat: ProductCategory?, title: String) -> some View {
         Button {
-            withAnimation { selectedCategory = cat }
+            withAnimation(.snappy(duration: 0.28)) { selectedCategory = cat }
         } label: {
             Text(title)
                 .font(.subheadline.bold())
@@ -101,6 +104,7 @@ struct MarketView: View {
                 .foregroundStyle(selectedCategory == cat ? .green : .primary)
                 .clipShape(Capsule())
         }
+        .buttonStyle(PressFeedbackStyle())
     }
 }
 
@@ -150,6 +154,7 @@ struct PriceLineChart: View {
                 .foregroundStyle(color.opacity(0.12).gradient)
         }
         .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 62)
+        .animation(.snappy(duration: 0.35), value: history.count)
     }
 }
 

@@ -149,9 +149,10 @@ final class GameEngine {
         if npc.id == "n_lena" { choices = choices.filter { $0.category == .herbal || $0.category == .collectibles } }
         if npc.id == "n_omar" || npc.id == "n_jules" { choices = choices.filter { $0.category == .electronics || $0.category == .tech || $0.category == .collectibles } }
         if npc.id == "n_niko" { choices = choices.filter { $0.category == .collectibles || $0.category == .luxury } }
-        let selected = Array(choices.shuffled().prefix(3))
+        let selected = Array(choices.shuffled().prefix(5))
         for product in selected {
-            context.insert(NPCStockItem(npcID: npc.id, productID: product.id, quantity: Int.random(in: 2...8), unitPrice: price(for: product.id) * Double.random(in: 1.0...1.2)))
+            let markup = product.fixedPrice ? 1 : Double.random(in: 1.0...1.2)
+            context.insert(NPCStockItem(npcID: npc.id, productID: product.id, quantity: Int.random(in: 3...12), unitPrice: price(for: product.id) * markup))
         }
         try? context.save()
     }
@@ -464,7 +465,7 @@ final class GameEngine {
         let stock = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
         for item in stock {
             guard let product = GameData.product(item.productID) else { continue }
-            item.quantity = Int.random(in: 2...8)
+            item.quantity = Int.random(in: 3...12)
             item.unitPrice = price(for: product.id) * (product.fixedPrice ? 1 : Double.random(in: 1.0...1.2))
         }
     }

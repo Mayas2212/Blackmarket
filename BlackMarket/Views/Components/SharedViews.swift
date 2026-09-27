@@ -13,6 +13,17 @@ extension View {
     func cardStyle() -> some View { modifier(CardBackground()) }
 }
 
+struct PressFeedbackStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.975 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: configuration.isPressed)
+    }
+}
+
 struct StatPill: View {
     let icon: String
     let label: String
@@ -25,7 +36,7 @@ struct StatPill: View {
                 Image(systemName: icon).foregroundStyle(tint)
                 Text(label).font(.caption).foregroundStyle(.secondary)
             }
-            Text(value).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7).contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

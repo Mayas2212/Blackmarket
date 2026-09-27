@@ -47,7 +47,7 @@ struct HomeView: View {
                 Button { showBTCExchange = true } label: {
                     StatPill(icon: "bitcoinsign.circle.fill", label: "BTC (tap to trade)", value: Formatters.btc(player.btc), tint: .orange)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressFeedbackStyle())
             }
             HStack(spacing: 12) {
                 StatPill(icon: "star.fill", label: "Reputation", value: "\(player.reputation)", tint: .yellow)
@@ -72,9 +72,11 @@ struct HomeView: View {
                     Text("\(obj.progress)/\(obj.target)").font(.caption.bold())
                 }
                 .animation(.default, value: obj.progress)
+                .transition(.opacity.combined(with: .move(edge: .leading)))
             }
         }
         .cardStyle()
+        .animation(.snappy(duration: 0.25), value: objectives.count)
     }
 
     @ViewBuilder
@@ -95,7 +97,8 @@ struct HomeView: View {
                     }
                 }
             }
-            .cardStyle()
+                .cardStyle()
+                .animation(.snappy(duration: 0.25), value: events.count)
         }
     }
 
@@ -123,9 +126,11 @@ struct HomeView: View {
                     }
                     Divider().padding(.top, 8)
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .cardStyle()
+        .animation(.snappy(duration: 0.28), value: transactions.first?.date)
     }
 
     private func icon(for tx: TransactionRecord) -> String {

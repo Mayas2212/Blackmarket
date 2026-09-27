@@ -23,7 +23,7 @@ struct NetworkView: View {
                         Button { selectedNPC = npc } label: {
                             NPCRow(npc: npc, isFollowing: followed.first { $0.npcID == npc.id }?.isFollowing ?? false)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressFeedbackStyle())
                     }
                 }
             }
@@ -65,7 +65,7 @@ struct MessagesView: View {
                                 }
                                 .padding(.vertical, 4)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PressFeedbackStyle())
                         }
                     }
                 }
@@ -134,6 +134,8 @@ struct NPCChatView: View {
     @State private var targetPrice = 0.0
     @State private var agreedPrice = 0.0
     @State private var negotiationCount = 0
+    @State private var purchaseQuantity = 1
+    @State private var saleQuantity = 1
 
     private var player: PlayerState? { players.first }
     private var isFollowing: Bool { followedAll.first { $0.npcID == npc.id }?.isFollowing ?? false }
@@ -172,6 +174,9 @@ struct NPCChatView: View {
                 restoreDeal()
             }
             .onChange(of: shipments.count) { _, count in if count == 0, action == .shipping { action = .home } }
+            .onChange(of: activeStock?.quantity ?? 0) { _, available in
+                purchaseQuantity = min(purchaseQuantity, max(available, 1))
+            }
         }
     }
 
@@ -218,10 +223,16 @@ struct NPCChatView: View {
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 16)
                     }
                     ForEach(messages.indices, id: \.self) { index in
-                        messageBubble(messages[index]).id(index)
+                        messageBubble(messages[index])
+                            .id(index)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: messages[index].isFromPlayer ? .trailing : .leading).combined(with: .opacity),
+                                removal: .opacity
+                            ))
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 16)
+                .animation(.snappy(duration: 0.24), value: messages.count)
             }
             .onChange(of: messages.count) { _, _ in
                 if !messages.isEmpty { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
@@ -248,6 +259,32 @@ struct NPCChatView: View {
     private var quickReplyPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(actionTitle).font(.caption.bold()).foregroundStyle(.secondary)
+            if (action == .negotiatingPurchase || action == .readyToPurchase), let item = activeStock {
+                Stepper(value: $purchaseQuantity, in: 1...max(item.quantity, 1)) {
+                    HStack {
+                        Text("Order quantity").font(.subheadline.weight(.medium))
+                        Spacer()
+                        let unitPrice = action == .readyToPurchase ? agreedPrice : item.unitPrice
+                        Text("Total \(Formatters.moneyPrecise(unitPrice * Double(purchaseQuantity)))")
+                            .font(.caption.bold().monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.green)
+            } else if incomingOffer == nil,
+                      (action == .negotiatingSale || action == .readyToShip),
+                      let productID = activeProductID,
+                      let item = inventoryAll.first(where: { $0.productID == productID && $0.quantity > 0 }) {
+                Stepper(value: $saleQuantity, in: 1...max(item.quantity, 1)) {
+                    HStack {
+                        Text("Sell quantity").font(.subheadline.weight(.medium))
+                        Spacer()
+                        let unitPrice = action == .readyToShip ? agreedPrice : targetPrice
+                        Text("Total \(Formatters.moneyPrecise(unitPrice * Double(saleQuantity)))")
+                            .font(.caption.bold().monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.green)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) { actionButtons }
             }
@@ -255,6 +292,9 @@ struct NPCChatView: View {
         .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 8)
         .background(Color(.systemBackground))
         .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5) }
+        .animation(.snappy(duration: 0.24), value: action)
+        .animation(.snappy(duration: 0.18), value: purchaseQuantity)
+        .animation(.snappy(duration: 0.18), value: saleQuantity)
     }
 
     @ViewBuilder private var actionButtons: some View {
@@ -291,14 +331,14 @@ struct NPCChatView: View {
                 quickButton("Back", icon: "chevron.left") { action = .home }
             case .negotiatingPurchase:
                 if let item = activeStock {
-                    quickButton("Buy at \(Formatters.moneyPrecise(item.unitPrice))", icon: "bag") { buyFromSeller(at: item.unitPrice) }
-                    quickButton("Offer 20% less", icon: "arrow.down", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.8) }
-                    quickButton("Offer 10% less", icon: "arrow.down.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.9) }
-                    quickButton("Offer 5% less", icon: "arrow.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.95) }
-                    quickButton("Offer 2% less", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.98) }
+                    quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(item.unitPrice * Double(purchaseQuantity)))", icon: "bag", enabled: (player?.cashUSD ?? 0) >= item.unitPrice * Double(purchaseQuantity)) { buyFromSeller(at: item.unitPrice) }
+                    quickButton("Offer 20% less / item", icon: "arrow.down", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.8) }
+                    quickButton("Offer 10% less / item", icon: "arrow.down.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.9) }
+                    quickButton("Offer 5% less / item", icon: "arrow.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.95) }
+                    quickButton("Offer 2% less / item", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.98) }
                 }
             case .readyToPurchase:
-                quickButton("Buy for \(Formatters.moneyPrecise(agreedPrice))", icon: "bag.fill") { buyFromSeller(at: agreedPrice) }
+                quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(agreedPrice * Double(purchaseQuantity)))", icon: "bag.fill", enabled: (player?.cashUSD ?? 0) >= agreedPrice * Double(purchaseQuantity)) { buyFromSeller(at: agreedPrice) }
                 quickButton("Back to stock", icon: "chevron.left") { action = .browsingStock }
             case .choosingItem:
                 if sellableItems.isEmpty { Text("You need inventory before offering an item.").font(.caption).foregroundStyle(.secondary) }
@@ -310,14 +350,14 @@ struct NPCChatView: View {
                 quickButton("Cancel", icon: "xmark") { action = .home }
             case .negotiatingSale:
                 if let product = activeProductID.flatMap(GameData.product) {
-                    quickButton("Sell at \(Formatters.moneyPrecise(targetPrice))", icon: "equal.circle", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice) }
-                    quickButton("Ask 10% more", icon: "arrow.up", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.1) }
-                    quickButton("Ask 20% more", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.2) }
-                    quickButton("Offer 10% less", icon: "arrow.down", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 0.9) }
+                    quickButton("Sell at \(Formatters.moneyPrecise(targetPrice)) / item", icon: "equal.circle", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice) }
+                    quickButton("Ask 10% more / item", icon: "arrow.up", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.1) }
+                    quickButton("Ask 20% more / item", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.2) }
+                    quickButton("Offer 10% less / item", icon: "arrow.down", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 0.9) }
                     Text(product.name).hidden()
                 }
             case .readyToShip:
-                quickButton("Ship for \(Formatters.moneyPrecise(agreedPrice))", icon: "shippingbox.fill") { shipToBuyer() }
+                quickButton("Ship for \(Formatters.moneyPrecise(agreedPrice * Double(saleQuantity)))", icon: "shippingbox.fill") { shipToBuyer() }
                 quickButton("Cancel", icon: "xmark") { action = .home }
             case .shipping: EmptyView()
             }
@@ -344,7 +384,7 @@ struct NPCChatView: View {
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .background(Color.green.opacity(0.12)).foregroundStyle(.green).clipShape(Capsule())
         }
-        .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.45)
+        .buttonStyle(PressFeedbackStyle()).disabled(!enabled).opacity(enabled ? 1 : 0.45)
     }
 
     private func browseStock() {
@@ -356,6 +396,7 @@ struct NPCChatView: View {
     private func askAbout(_ item: NPCStockItem) {
         guard item.quantity > 0 else { send("Do you still have that in stock?", reply: "Sorry, I just sold the last one."); return }
         activeStockID = item.persistentModelID
+        purchaseQuantity = 1
         activeProductID = item.productID
         targetPrice = item.unitPrice
         agreedPrice = item.unitPrice
@@ -397,8 +438,8 @@ struct NPCChatView: View {
 
     private func buyFromSeller(at price: Double) {
         guard let item = activeStock else { send("Is that item still available?", reply: "Sorry, it just sold out."); action = .home; return }
-        if engine.purchaseFromNPC(npcID: npc.id, stockItem: item, unitPrice: price) {
-            send("I’ll take one at \(Formatters.moneyPrecise(price)). Please ship it.", reply: "Confirmed. Your order is on its way; delivery takes 5–10 minutes.")
+        if engine.purchaseFromNPC(npcID: npc.id, stockItem: item, quantity: purchaseQuantity, unitPrice: price) {
+            send("I’ll take \(purchaseQuantity) at \(Formatters.moneyPrecise(price)) each. Please ship the order.", reply: "Confirmed. Your order is on its way; delivery takes 5–10 minutes.")
             action = .shipping
         } else {
             send("I can’t complete the purchase yet.", reply: "Check your balance or stock and try again.")
@@ -408,6 +449,7 @@ struct NPCChatView: View {
     private func offerItemToBuyer(_ product: ProductDef) {
         guard let item = sellableItems.first(where: { $0.productID == product.id }), item.quantity > 0 else { return }
         activeProductID = product.id
+        saleQuantity = 1
         targetPrice = engine.price(for: product.id)
         agreedPrice = targetPrice
         negotiationCount = 0
@@ -420,10 +462,10 @@ struct NPCChatView: View {
         }
         if wantsItem {
             action = .negotiatingSale
-            send("I have a \(product.name) available. Interested?", reply: "Yes, I’m interested in one. I usually pay around \(Formatters.moneyPrecise(targetPrice)). What’s your price?")
+            send("I have \(saleQuantity) \(product.name) available. Interested?", reply: "Yes, I’m interested in \(saleQuantity). I usually pay around \(Formatters.moneyPrecise(targetPrice)) each. What’s your price?")
         } else {
             action = .choosingItem
-            send("I have a \(product.name) available. Interested?", reply: "That’s not really what I collect. Do you have something else?")
+            send("I have \(saleQuantity) \(product.name) available. Interested?", reply: "That’s not really what I collect. Do you have something else?")
         }
     }
 
@@ -446,7 +488,7 @@ struct NPCChatView: View {
 
     private func shipToBuyer(listingOffer: MessageRecord? = nil, negotiatedPrice: Double? = nil) {
         let productID = listingOffer?.listingProductID ?? activeProductID
-        let quantity = listingOffer?.listingQuantity ?? 1
+        let quantity = listingOffer?.listingQuantity ?? saleQuantity
         guard let productID else { return }
         let price = negotiatedPrice ?? listingOffer?.listingPrice ?? agreedPrice
         let listingDate = listingOffer?.listingCreatedAt
@@ -456,7 +498,7 @@ struct NPCChatView: View {
             return
         }
         let name = GameData.product(productID)?.name ?? "item"
-        send("Deal. I’m shipping \(quantity) \(name) for \(Formatters.moneyPrecise(price)) each.", reply: "Agreed. I’ll pay as soon as it arrives. Shipping takes 5–10 minutes.")
+        send("Deal. I’m shipping \(quantity) \(name) for \(Formatters.moneyPrecise(price)) each.", reply: "Agreed. Your order is confirmed; shipping takes 5–10 minutes.")
         action = .shipping
     }
 
