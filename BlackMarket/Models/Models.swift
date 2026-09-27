@@ -149,12 +149,14 @@ final class MessageRecord {
     var text: String
     var isFromPlayer: Bool
     var date: Date
+    var offeredProductID: String?
 
-    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now) {
+    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now, offeredProductID: String? = nil) {
         self.npcID = npcID
         self.text = text
         self.isFromPlayer = isFromPlayer
         self.date = date
+        self.offeredProductID = offeredProductID
     }
 }
 
