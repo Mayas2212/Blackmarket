@@ -1,0 +1,67 @@
+name: Build BLACKMARKET (unsigned IPA)
+
+# Runs on GitHub's macOS runners so you can build this iOS app
+# from Windows: just push to GitHub, and this workflow compiles it
+# for you. No Mac required to build.
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate
+
+      - name: Build unsigned .app for iOS devices
+        run: |
+          xcodebuild \
+            -project BlackMarket.xcodeproj \
+            -scheme BlackMarket \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package as unsigned .ipa
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/BlackMarket.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Build product not found at $APP_PATH"
+            find build -maxdepth 6 -name "*.app"
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r BlackMarket-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackMarket-unsigned-ipa
+          path: BlackMarket-unsigned.ipa
+          retention-days: 14
+
+      - name: Also build for Simulator (quick compile check)
+        run: |
+          xcodebuild \
+            -project BlackMarket.xcodeproj \
+            -scheme BlackMarket \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build-sim \
+            build
