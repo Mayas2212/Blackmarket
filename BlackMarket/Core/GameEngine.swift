@@ -206,7 +206,10 @@ final class GameEngine {
         guard let item = allInv.first(where: { $0.productID == productID }), item.quantity >= quantity else { return false }
         item.quantity -= quantity
         if item.quantity == 0 { context.delete(item) }
-        context.insert(ListingItem(productID: productID, quantity: quantity, price: price))
+        let marketPrice = max(self.price(for: productID), 1)
+        let hoursToSale = max(1.0, min(36.0, 6.0 * (price / marketPrice))) * Double.random(in: 0.8...1.2)
+        let saleDate = Date.now.addingTimeInterval(hoursToSale * 3600)
+        context.insert(ListingItem(productID: productID, quantity: quantity, price: price, saleCompletesAt: saleDate))
         context.insert(TransactionRecord(type: .event, total: 0, note: "Profile listing created"))
         checkAchievements()
         try? context.save()
@@ -236,9 +239,12 @@ final class GameEngine {
         let activeListings = listings().filter { $0.isActive }
         for listing in activeListings {
             let marketPrice = price(for: listing.productID)
-            let ratio = marketPrice > 0 ? listing.price / marketPrice : 1
-            let sellChance = max(0.05, min(0.9, 0.6 - (ratio - 1) * 0.8))
-            if Double.random(in: 0...1) < sellChance {
+            if listing.saleCompletesAt == nil {
+                let ratio = max(1.0, min(36.0, 6.0 * listing.price / max(marketPrice, 1)))
+                listing.saleCompletesAt = listing.createdAt.addingTimeInterval(ratio * 3600)
+            }
+            guard let saleDate = listing.saleCompletesAt, saleDate <= .now else { continue }
+            do {
                 let total = listing.price * Double(listing.quantity)
                 player.cashUSD += total
                 let inflatedReplica = GameData.product(listing.productID)?.fixedPrice == true && listing.price > marketPrice * 2.5
@@ -251,13 +257,15 @@ final class GameEngine {
                     player.reputation += max(1, listing.quantity)
                     player.xp += max(1, listing.quantity)
                 }
-                context.insert(TransactionRecord(type: .listingSale, productID: listing.productID, quantity: listing.quantity, unitPrice: listing.price, total: total, note: exposed ? "Buyer left a poor review: item was misrepresented" : "Listing sold"))
+                context.insert(TransactionRecord(type: .listingSale, productID: listing.productID, quantity: listing.quantity, unitPrice: listing.price, total: total, date: saleDate, note: exposed ? "Buyer left a poor review: item was misrepresented" : "Listing sold while you were away"))
                 context.delete(listing)
             }
         }
         applyLevelUpIfNeeded(player: player)
-        if Double.random(in: 0...1) < 0.3 { player.followers += Int.random(in: 0...2) }
-        if shouldRoll { maybeTriggerEvent() }
+        if shouldRoll {
+            if Double.random(in: 0...1) < 0.3 { player.followers += Int.random(in: 0...2) }
+            maybeTriggerEvent()
+        }
         checkAchievements()
         try? context.save()
     }

@@ -72,13 +72,15 @@ final class ListingItem {
     var price: Double
     var createdAt: Date
     var isActive: Bool
+    var saleCompletesAt: Date?
 
-    init(productID: String, quantity: Int, price: Double, createdAt: Date = .now, isActive: Bool = true) {
+    init(productID: String, quantity: Int, price: Double, createdAt: Date = .now, isActive: Bool = true, saleCompletesAt: Date? = nil) {
         self.productID = productID
         self.quantity = quantity
         self.price = price
         self.createdAt = createdAt
         self.isActive = isActive
+        self.saleCompletesAt = saleCompletesAt
     }
 }
 

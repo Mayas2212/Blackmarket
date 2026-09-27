@@ -114,6 +114,8 @@ struct ProfileView: View {
                         VStack(alignment: .leading) {
                             Text(product.name).font(.subheadline.bold())
                             Text("x\(listing.quantity) @ \(Formatters.moneyPrecise(listing.price))").font(.caption).foregroundStyle(.secondary)
+                            Text(listing.saleCompletesAt.map { "Auto-sale around \(Formatters.compactDate($0))" } ?? "Auto-sale progress continues while you’re away")
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Cancel") { engine.cancelListing(listing) }
