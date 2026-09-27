@@ -28,7 +28,11 @@ struct RootView: View {
                         AdminView(engine: engine)
                     }
                     .onChange(of: scenePhase) { _, phase in
-                        if phase == .active { engine.simulateMarketTick() }
+                        if phase == .background {
+                            UserDefaults.standard.set(Date.now, forKey: "blackmarket.lastBackgroundAt")
+                        } else if phase == .active {
+                            engine.simulateMarketTick()
+                        }
                     }
             } else {
                 ProgressView()

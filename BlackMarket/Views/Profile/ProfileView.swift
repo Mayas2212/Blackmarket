@@ -114,7 +114,7 @@ struct ProfileView: View {
                         VStack(alignment: .leading) {
                             Text(product.name).font(.subheadline.bold())
                             Text("x\(listing.quantity) @ \(Formatters.moneyPrecise(listing.price))").font(.caption).foregroundStyle(.secondary)
-                            Text(listing.saleCompletesAt.map { "Auto-sale around \(Formatters.compactDate($0))" } ?? "Auto-sale progress continues while you’re away")
+                            Text(listing.saleCompletesAt.map { "Expected buyer activity around \(Formatters.compactDate($0))" } ?? "Waiting for a buyer to find this listing")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -148,6 +148,7 @@ struct SettingsView: View {
     @Query private var players: [PlayerState]
     @AppStorage("blackmarket.darkMode") private var darkMode = false
     @AppStorage("blackmarket.accent") private var accent = "green"
+    @AppStorage("blackmarket.devSettingsOn") private var devSettingsOn = false
     @State private var username = ""
     private var player: PlayerState? { players.first }
     private let avatars = ["person.crop.circle.fill", "person.fill", "person.crop.circle", "person.crop.square.fill", "theatermasks.fill", "star.circle.fill"]
@@ -168,7 +169,9 @@ struct SettingsView: View {
                 }
                 Section("Developer tools") {
                     if player?.isDevModeUnlocked == true {
+                        Toggle("Enable developer settings", isOn: $devSettingsOn)
                         Button("Open developer settings") { dismiss(); showAdmin = true }
+                        Text("When enabled, developer mode can skip package delivery waits.").font(.caption).foregroundStyle(.secondary)
                     } else {
                         Text("Tap your profile avatar seven times to unlock developer settings.").font(.caption).foregroundStyle(.secondary)
                     }

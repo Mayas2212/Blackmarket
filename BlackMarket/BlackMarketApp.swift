@@ -16,6 +16,8 @@ struct BlackMarketApp: App {
             PriceOverride.self,
             PriceSnapshot.self,
             CryptoHolding.self,
+            NPCStockItem.self,
+            ShippingOrder.self,
             AchievementRecord.self,
             DailyObjective.self
         ])

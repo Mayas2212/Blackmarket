@@ -114,6 +114,127 @@ final class GameEngine {
         (try? context.fetch(FetchDescriptor<TransactionRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
     }
 
+    func availableContacts(for player: PlayerState) -> [NPCDef] {
+        let unlocked = GameData.npcs.filter { player.reputation >= contactUnlockRep($0.id) }
+        let followedIDs = ((try? context.fetch(FetchDescriptor<FollowedNPC>())) ?? []).map(\.npcID)
+        let generated = followedIDs.compactMap { GameData.npc($0) }.filter { $0.id.hasPrefix("n_generated_") }
+        return Array(Dictionary((unlocked + generated).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values).sorted { $0.name < $1.name }
+    }
+
+    private func contactUnlockRep(_ id: String) -> Int {
+        switch id {
+        case "n_mina": 100
+        case "n_aria", "n_jules": 250
+        case "n_sasha", "n_niko": 450
+        case "n_omar", "n_ivy": 100
+        case "n_the_broker": 700
+        default: 0
+        }
+    }
+
+    func stock(for npcID: String) -> [NPCStockItem] {
+        let all = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
+        if !all.contains(where: { $0.npcID == npcID }), let npc = GameData.npc(npcID), npc.kind == .seller {
+            seedStock(for: npc)
+        }
+        let updated = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
+        return updated.filter { $0.npcID == npcID && $0.quantity > 0 }
+    }
+
+    private func seedStock(for npc: NPCDef) {
+        let existing = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
+        guard !existing.contains(where: { $0.npcID == npc.id }) else { return }
+        let player = fetchPlayer()
+        var choices = GameData.products.filter { !$0.fixedPrice }
+        if npc.id == "n_lena" { choices = choices.filter { $0.category == .herbal || $0.category == .collectibles } }
+        if npc.id == "n_omar" || npc.id == "n_jules" { choices = choices.filter { $0.category == .electronics || $0.category == .tech || $0.category == .collectibles } }
+        if npc.id == "n_niko" { choices = choices.filter { $0.category == .collectibles || $0.category == .luxury } }
+        let selected = Array(choices.shuffled().prefix(3))
+        for product in selected {
+            context.insert(NPCStockItem(npcID: npc.id, productID: product.id, quantity: Int.random(in: 2...8), unitPrice: price(for: product.id) * Double.random(in: 1.0...1.2)))
+        }
+        try? context.save()
+    }
+
+    @discardableResult
+    func purchaseFromNPC(npcID: String, stockItem: NPCStockItem, quantity: Int = 1, unitPrice: Double? = nil) -> Bool {
+        let player = fetchPlayer()
+        let finalPrice = unitPrice ?? stockItem.unitPrice
+        let total = finalPrice * Double(quantity)
+        guard quantity > 0, stockItem.quantity >= quantity, player.cashUSD >= total else { return false }
+        stockItem.quantity -= quantity
+        player.cashUSD -= total
+        let arrival = Date.now.addingTimeInterval(TimeInterval.random(in: 300...600))
+        context.insert(ShippingOrder(npcID: npcID, productID: stockItem.productID, quantity: quantity, unitPrice: finalPrice, isSale: false, arrivesAt: arrival))
+        context.insert(TransactionRecord(type: .buy, productID: stockItem.productID, quantity: quantity, unitPrice: finalPrice, total: -total, note: "Bought from contact; shipping"))
+        try? context.save()
+        return true
+    }
+
+    @discardableResult
+    func shipSale(npcID: String, productID: String, quantity: Int, unitPrice: Double, listingCreatedAt: Date? = nil) -> Bool {
+        guard quantity > 0 else { return false }
+        let due = Date.now.addingTimeInterval(TimeInterval.random(in: 300...600))
+        if let listingCreatedAt {
+            guard let listing = listings().first(where: { $0.productID == productID && $0.quantity >= quantity && $0.createdAt == listingCreatedAt }) else { return false }
+            let remaining = listing.quantity - quantity
+            if remaining == 0 { context.delete(listing) } else { listing.quantity = remaining }
+        } else {
+            guard let item = inventory().first(where: { $0.productID == productID && $0.quantity >= quantity }) else { return false }
+            item.quantity -= quantity
+            if item.quantity == 0 { context.delete(item) }
+        }
+        context.insert(ShippingOrder(npcID: npcID, productID: productID, quantity: quantity, unitPrice: unitPrice, isSale: true, arrivesAt: due, listingCreatedAt: listingCreatedAt))
+        context.insert(TransactionRecord(type: .event, productID: productID, quantity: quantity, total: 0, note: "Packed order for \(GameData.npc(npcID)?.name ?? "customer")"))
+        try? context.save()
+        return true
+    }
+
+    func shippingOrders() -> [ShippingOrder] {
+        (try? context.fetch(FetchDescriptor<ShippingOrder>()))?.filter { !$0.isComplete } ?? []
+    }
+
+    func skipShipping(_ order: ShippingOrder) {
+        guard fetchPlayer().isDevModeUnlocked, UserDefaults.standard.bool(forKey: "blackmarket.devSettingsOn") else { return }
+        order.arrivesAt = .now
+        processShipping()
+    }
+
+    private func processShipping() {
+        let orders = shippingOrders().filter { $0.arrivesAt <= .now }
+        for order in orders {
+            let lost = Double.random(in: 0..<1) < 0.05
+            order.packageLost = lost
+            order.isComplete = true
+            let total = order.unitPrice * Double(order.quantity)
+            let player = fetchPlayer()
+            if order.isSale {
+                // The customer pays the agreed amount even if the carrier loses the parcel.
+                player.cashUSD += total
+                player.reputation += lost ? 0 : max(1, order.quantity)
+                context.insert(TransactionRecord(type: .listingSale, productID: order.productID, quantity: order.quantity, unitPrice: order.unitPrice, total: total, note: lost ? "Carrier lost package; customer paid in full" : "Delivered to customer"))
+            } else if lost {
+                // Seller reimburses a lost inbound package.
+                player.cashUSD += total
+                context.insert(TransactionRecord(type: .event, productID: order.productID, total: total, note: "Seller reimbursed lost package"))
+            } else {
+                let inventory = self.inventory()
+                if let item = inventory.first(where: { $0.productID == order.productID }) {
+                    let newQuantity = item.quantity + order.quantity
+                    item.avgCost = (item.avgCost * Double(item.quantity) + total) / Double(newQuantity)
+                    item.quantity = newQuantity
+                } else {
+                    context.insert(InventoryItem(productID: order.productID, quantity: order.quantity, avgCost: order.unitPrice))
+                }
+            }
+            let productName = GameData.product(order.productID)?.name ?? "your item"
+            let status = lost ? (order.isSale ? "The carrier lost \(productName), but your customer paid in full." : "The carrier lost \(productName). The seller reimbursed you.") : (order.isSale ? "\(productName) was delivered. Payment is in your balance." : "\(productName) arrived. It’s in your inventory.")
+            context.insert(MessageRecord(npcID: order.npcID, text: status, isFromPlayer: false))
+        }
+        checkAchievements()
+        try? context.save()
+    }
+
     func fetchFollowed(npcID: String) -> FollowedNPC? {
         let all = (try? context.fetch(FetchDescriptor<FollowedNPC>())) ?? []
         return all.first { $0.npcID == npcID }
@@ -207,8 +328,8 @@ final class GameEngine {
         item.quantity -= quantity
         if item.quantity == 0 { context.delete(item) }
         let marketPrice = max(self.price(for: productID), 1)
-        let hoursToSale = max(1.0, min(36.0, 6.0 * (price / marketPrice))) * Double.random(in: 0.8...1.2)
-        let saleDate = Date.now.addingTimeInterval(hoursToSale * 3600)
+        let minutesToBuyer = max(3.0, min(30.0, 10.0 * (price / marketPrice))) * Double.random(in: 0.8...1.2)
+        let saleDate = Date.now.addingTimeInterval(minutesToBuyer * 60)
         context.insert(ListingItem(productID: productID, quantity: quantity, price: price, saleCompletesAt: saleDate))
         context.insert(TransactionRecord(type: .event, total: 0, note: "Profile listing created"))
         checkAchievements()
@@ -229,36 +350,60 @@ final class GameEngine {
 
     /// Prices are fixed for the whole local calendar day and roll once after midnight.
     func simulateMarketTick() {
+        let backgroundAt = UserDefaults.standard.object(forKey: "blackmarket.lastBackgroundAt") as? Date
+        let wasAway = backgroundAt.map { Date.now.timeIntervalSince($0) >= 60 } ?? false
+        UserDefaults.standard.removeObject(forKey: "blackmarket.lastBackgroundAt")
         let overrides = (try? context.fetch(FetchDescriptor<PriceOverride>())) ?? []
         let btc = overrides.first { $0.productID == "BTC_RATE" }
         let shouldRoll = btc.map { !Calendar.current.isDate($0.lastUpdated, inSameDayAs: .now) } ?? false
         if shouldRoll {
             refreshMarketPrices()
+            restockContactInventory()
         }
         let player = fetchPlayer()
         let activeListings = listings().filter { $0.isActive }
         for listing in activeListings {
-            let marketPrice = price(for: listing.productID)
             if listing.saleCompletesAt == nil {
-                let ratio = max(1.0, min(36.0, 6.0 * listing.price / max(marketPrice, 1)))
-                listing.saleCompletesAt = listing.createdAt.addingTimeInterval(ratio * 3600)
+                let ratio = max(3.0, min(30.0, 10.0 * listing.price / max(price(for: listing.productID), 1)))
+                listing.saleCompletesAt = listing.createdAt.addingTimeInterval(ratio * 60)
             }
-            guard let saleDate = listing.saleCompletesAt, saleDate <= .now else { continue }
-            do {
-                let total = listing.price * Double(listing.quantity)
-                player.cashUSD += total
-                let inflatedReplica = GameData.product(listing.productID)?.fixedPrice == true && listing.price > marketPrice * 2.5
-                let exposed = inflatedReplica && Double.random(in: 0...1) < 0.3
-                if exposed {
-                    player.reputation = max(0, player.reputation - 15)
-                    player.followers = max(0, player.followers - 1)
-                    context.insert(ReviewRecord(npcID: GameData.npcs.randomElement()?.id ?? "n_marco", rating: 1, text: "Listing did not match its description."))
+            guard let due = listing.saleCompletesAt, due <= .now else { continue }
+            let existingMessages = (try? context.fetch(FetchDescriptor<MessageRecord>())) ?? []
+            let existingOffer = existingMessages.last {
+                !$0.isFromPlayer && $0.listingProductID == listing.productID && $0.listingCreatedAt == listing.createdAt
+            }
+            let alreadyAnswered = existingMessages.contains {
+                $0.isFromPlayer && $0.listingCreatedAt == listing.createdAt
+            }
+            if wasAway, !alreadyAnswered,
+               let buyer = existingOffer.flatMap({ GameData.npc($0.npcID) }) ?? availableContacts(for: player).filter({ $0.kind == .buyer }).randomElement() {
+                let quantity = min(listing.quantity, existingOffer?.listingQuantity ?? listing.quantity)
+                let salePrice = existingOffer?.listingPrice ?? listing.price
+                let productName = GameData.product(listing.productID)?.name ?? "your item"
+                if existingOffer == nil {
+                    context.insert(MessageRecord(npcID: buyer.id, text: "I found your profile listing for \(productName) and bought all \(quantity) at your listed price of \(Formatters.moneyPrecise(salePrice)) each. It’s on the way.", isFromPlayer: false, listingProductID: listing.productID, listingQuantity: quantity, listingPrice: salePrice, listingCreatedAt: listing.createdAt))
                 } else {
-                    player.reputation += max(1, listing.quantity)
-                    player.xp += max(1, listing.quantity)
+                    context.insert(MessageRecord(npcID: buyer.id, text: "I accepted your offer for \(quantity) \(productName) at \(Formatters.moneyPrecise(salePrice)) each. It’s on the way.", isFromPlayer: false))
                 }
-                context.insert(TransactionRecord(type: .listingSale, productID: listing.productID, quantity: listing.quantity, unitPrice: listing.price, total: total, date: saleDate, note: exposed ? "Buyer left a poor review: item was misrepresented" : "Listing sold while you were away"))
-                context.delete(listing)
+                context.insert(MessageRecord(npcID: buyer.id, text: "Order confirmed. Ship it when ready.", isFromPlayer: true, listingCreatedAt: existingOffer?.listingCreatedAt ?? listing.createdAt))
+                if fetchFollowed(npcID: buyer.id) == nil {
+                    context.insert(FollowedNPC(npcID: buyer.id, isFollowing: true))
+                    player.following += 1
+                }
+                _ = shipSale(npcID: buyer.id, productID: listing.productID, quantity: quantity, unitPrice: salePrice, listingCreatedAt: listing.createdAt)
+                continue
+            }
+            let alreadyContacted = existingMessages.contains { !$0.isFromPlayer && $0.listingProductID == listing.productID && $0.listingCreatedAt == listing.createdAt }
+            guard !alreadyContacted else { continue }
+            let buyers = availableContacts(for: player).filter { $0.kind == .buyer }
+            guard let buyer = buyers.randomElement() else { continue }
+            let quantity = max(1, min(listing.quantity, Int.random(in: 1...max(listing.quantity, 1))))
+            let offer = listing.price * Double.random(in: 0.85...1.05)
+            let productName = GameData.product(listing.productID)?.name ?? "your listing"
+            context.insert(MessageRecord(npcID: buyer.id, text: "Hi! I saw your profile listing for \(productName). I can take \(quantity) for \(Formatters.moneyPrecise(offer)) each. Want to make a deal?", isFromPlayer: false, listingProductID: listing.productID, listingQuantity: quantity, listingPrice: offer, listingCreatedAt: listing.createdAt))
+            if fetchFollowed(npcID: buyer.id) == nil {
+                context.insert(FollowedNPC(npcID: buyer.id, isFollowing: true))
+                player.following += 1
             }
         }
         applyLevelUpIfNeeded(player: player)
@@ -267,6 +412,7 @@ final class GameEngine {
             maybeTriggerEvent()
         }
         checkAchievements()
+        processShipping()
         try? context.save()
     }
 
@@ -312,6 +458,15 @@ final class GameEngine {
             context.insert(PriceSnapshot(assetID: override.productID, price: newPrice))
         }
         try? context.save()
+    }
+
+    private func restockContactInventory() {
+        let stock = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
+        for item in stock {
+            guard let product = GameData.product(item.productID) else { continue }
+            item.quantity = Int.random(in: 2...8)
+            item.unitPrice = price(for: product.id) * (product.fixedPrice ? 1 : Double.random(in: 1.0...1.2))
+        }
     }
 
     func priceHistory(for assetID: String, days: Int = 30) -> [PriceSnapshot] {
@@ -548,6 +703,8 @@ final class GameEngine {
         deleteAll(PriceOverride.self)
         deleteAll(PriceSnapshot.self)
         deleteAll(CryptoHolding.self)
+        deleteAll(NPCStockItem.self)
+        deleteAll(ShippingOrder.self)
         deleteAll(AchievementRecord.self)
         deleteAll(DailyObjective.self)
         try? context.save()

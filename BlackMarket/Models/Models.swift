@@ -150,13 +150,21 @@ final class MessageRecord {
     var isFromPlayer: Bool
     var date: Date
     var offeredProductID: String?
+    var listingProductID: String?
+    var listingQuantity: Int?
+    var listingPrice: Double?
+    var listingCreatedAt: Date?
 
-    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now, offeredProductID: String? = nil) {
+    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now, offeredProductID: String? = nil, listingProductID: String? = nil, listingQuantity: Int? = nil, listingPrice: Double? = nil, listingCreatedAt: Date? = nil) {
         self.npcID = npcID
         self.text = text
         self.isFromPlayer = isFromPlayer
         self.date = date
         self.offeredProductID = offeredProductID
+        self.listingProductID = listingProductID
+        self.listingQuantity = listingQuantity
+        self.listingPrice = listingPrice
+        self.listingCreatedAt = listingCreatedAt
     }
 }
 
@@ -214,6 +222,36 @@ final class CryptoHolding {
     var assetID: String
     var amount: Double
     init(assetID: String, amount: Double = 0) { self.assetID = assetID; self.amount = amount }
+}
+
+@Model
+final class NPCStockItem {
+    var npcID: String
+    var productID: String
+    var quantity: Int
+    var unitPrice: Double
+    init(npcID: String, productID: String, quantity: Int, unitPrice: Double) {
+        self.npcID = npcID; self.productID = productID; self.quantity = quantity; self.unitPrice = unitPrice
+    }
+}
+
+@Model
+final class ShippingOrder {
+    var npcID: String
+    var productID: String
+    var quantity: Int
+    var unitPrice: Double
+    var isSale: Bool
+    var createdAt: Date
+    var arrivesAt: Date
+    var isComplete: Bool
+    var packageLost: Bool?
+    var listingCreatedAt: Date?
+    init(npcID: String, productID: String, quantity: Int, unitPrice: Double, isSale: Bool, createdAt: Date = .now, arrivesAt: Date, isComplete: Bool = false, packageLost: Bool? = nil, listingCreatedAt: Date? = nil) {
+        self.npcID = npcID; self.productID = productID; self.quantity = quantity; self.unitPrice = unitPrice
+        self.isSale = isSale; self.createdAt = createdAt; self.arrivesAt = arrivesAt; self.isComplete = isComplete; self.packageLost = packageLost
+        self.listingCreatedAt = listingCreatedAt
+    }
 }
 
 // MARK: - Progression

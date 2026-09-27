@@ -4,10 +4,11 @@ import SwiftData
 struct NetworkView: View {
     var engine: GameEngine
     @Query private var followed: [FollowedNPC]
+    @Query private var players: [PlayerState]
     @State private var selectedNPC: NPCDef?
 
     private var contacts: [NPCDef] {
-        var byID = Dictionary(uniqueKeysWithValues: GameData.npcs.map { ($0.id, $0) })
+        var byID = Dictionary(uniqueKeysWithValues: (players.first.map { engine.availableContacts(for: $0) } ?? GameData.npcs).map { ($0.id, $0) })
         for relation in followed {
             if let npc = GameData.npc(relation.npcID) { byID[npc.id] = npc }
         }
@@ -111,12 +112,7 @@ struct NPCRow: View {
     }
 }
 
-private enum ChatAction {
-    case home
-    case choosingTrade
-    case acceptedTrade
-    case discussingPrice
-}
+private enum ChatAction: Equatable { case home, browsingStock, negotiatingPurchase, readyToPurchase, choosingItem, negotiatingSale, readyToShip, shipping }
 
 struct NPCChatView: View {
     var engine: GameEngine
@@ -127,18 +123,37 @@ struct NPCChatView: View {
     @Query private var reviewsAll: [ReviewRecord]
     @Query private var messagesAll: [MessageRecord]
     @Query private var inventoryAll: [InventoryItem]
+    @Query private var stockAll: [NPCStockItem]
+    @Query private var listingAll: [ListingItem]
+    @Query private var shippingAll: [ShippingOrder]
+    @Query private var players: [PlayerState]
+    @AppStorage("blackmarket.devSettingsOn") private var devMode = false
     @State private var action: ChatAction = .home
-    @State private var didRestoreAction = false
-    @State private var offeredProductID: String?
-    @State private var agreedPriceMultiplier = 1.0
+    @State private var activeProductID: String?
+    @State private var activeStockID: PersistentIdentifier?
+    @State private var targetPrice = 0.0
+    @State private var agreedPrice = 0.0
+    @State private var negotiationCount = 0
 
+    private var player: PlayerState? { players.first }
     private var isFollowing: Bool { followedAll.first { $0.npcID == npc.id }?.isFollowing ?? false }
     private var reviews: [ReviewRecord] { reviewsAll.filter { $0.npcID == npc.id } }
     private var messages: [MessageRecord] { messagesAll.filter { $0.npcID == npc.id }.sorted { $0.date < $1.date } }
     private var sellableItems: [InventoryItem] { inventoryAll.filter { $0.quantity > 0 } }
-    private var reputation: String {
-        let score = reviews.isEmpty ? Double(npc.baseRatingSeed) : Double(reviews.map(\.rating).reduce(0, +)) / Double(reviews.count)
-        return String(format: "★ %.1f reputation", score)
+    private var stockItems: [NPCStockItem] { stockAll.filter { $0.npcID == npc.id && $0.quantity > 0 } }
+    private var activeStock: NPCStockItem? { stockAll.first { $0.persistentModelID == activeStockID && $0.quantity > 0 } }
+    private var shipments: [ShippingOrder] { shippingAll.filter { $0.npcID == npc.id && !$0.isComplete } }
+    private var rating: Double { reviews.isEmpty ? Double(npc.baseRatingSeed) : Double(reviews.map(\.rating).reduce(0, +)) / Double(reviews.count) }
+    private var reputation: String { String(format: "★ %.1f reputation", rating) }
+    private var incomingOffer: MessageRecord? {
+        guard npc.kind == .buyer,
+              let message = messages.last(where: { !$0.isFromPlayer && $0.listingProductID != nil }),
+              let productID = message.listingProductID,
+              let createdAt = message.listingCreatedAt,
+              listingAll.contains(where: { $0.productID == productID && $0.createdAt == createdAt && $0.quantity > 0 }) else { return nil }
+        let replies = messages.filter { $0.isFromPlayer && $0.listingCreatedAt == createdAt }
+        if replies.count >= 4 || replies.contains(where: { $0.text.hasPrefix("Thanks, but I’ll pass") }) { return nil }
+        return message
     }
 
     var body: some View {
@@ -146,33 +161,52 @@ struct NPCChatView: View {
             VStack(spacing: 0) {
                 contactHeader
                 Divider()
+                if !shipments.isEmpty { shippingBanner }
                 conversation
                 quickReplyPanel
             }
             .background(Color(.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
-            .onAppear(perform: restoreAction)
+            .onAppear {
+                if npc.kind == .seller { _ = engine.stock(for: npc.id) }
+                restoreDeal()
+            }
+            .onChange(of: shipments.count) { _, count in if count == 0, action == .shipping { action = .home } }
         }
     }
 
     private var contactHeader: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.headline).foregroundStyle(.primary)
-            }
-            Image(systemName: npc.avatarSymbol)
-                .font(.title2).foregroundStyle(.white)
+            Button { dismiss() } label: { Image(systemName: "chevron.left").font(.headline).foregroundStyle(.primary) }
+            Image(systemName: npc.avatarSymbol).font(.title2).foregroundStyle(.white)
                 .frame(width: 42, height: 42).background(Color.green.gradient).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(npc.name).font(.headline)
-                Text(reputation).font(.caption).foregroundStyle(.orange)
+                Text(reputation).font(.caption).foregroundStyle(rating <= 3 ? .orange : .secondary)
             }
             Spacer()
             Button(isFollowing ? "Following" : "Follow") { toggleFollow() }
                 .font(.caption.bold()).buttonStyle(.bordered).tint(.green)
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color(.systemBackground))
+        .padding(.horizontal, 14).padding(.vertical, 10).background(Color(.systemBackground))
+    }
+
+    private var shippingBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(shipments) { order in
+                HStack(spacing: 8) {
+                    Image(systemName: "shippingbox.fill").foregroundStyle(.orange)
+                    Text("\(order.isSale ? "Your sale" : "Your purchase") · arrives \(Formatters.compactDate(order.arrivesAt))")
+                        .font(.caption.bold())
+                    Spacer()
+                    if devMode && player?.isDevModeUnlocked == true {
+                        Button("Skip") { engine.skipShipping(order) }.font(.caption.bold())
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Color.orange.opacity(0.1))
     }
 
     private var conversation: some View {
@@ -180,7 +214,7 @@ struct NPCChatView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     if messages.isEmpty {
-                        Text("This is the start of your chat with \(npc.name).")
+                        Text("You’re chatting with \(npc.name). Choose an action below to get started.")
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 16)
                     }
                     ForEach(messages.indices, id: \.self) { index in
@@ -189,13 +223,10 @@ struct NPCChatView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 16)
             }
-            .scrollDismissesKeyboard(.interactively)
             .onChange(of: messages.count) { _, _ in
                 if !messages.isEmpty { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
             }
-            .onAppear {
-                if !messages.isEmpty { proxy.scrollTo(messages.count - 1, anchor: .bottom) }
-            }
+            .onAppear { if !messages.isEmpty { proxy.scrollTo(messages.count - 1, anchor: .bottom) } }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -215,147 +246,277 @@ struct NPCChatView: View {
     }
 
     private var quickReplyPanel: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(actionTitle).font(.caption.bold()).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    switch action {
-                    case .home:
-                        quickButton("I can offer a trade", icon: "arrow.left.arrow.right") { action = .choosingTrade }
-                        quickButton("Let’s make a deal", icon: "dollarsign.circle") { beginPriceDiscussion() }
-                    case .choosingTrade:
-                        if sellableItems.isEmpty {
-                            Text("Buy something first to make a trade offer.").font(.caption).foregroundStyle(.secondary)
-                        }
-                        ForEach(sellableItems, id: \.productID) { item in
-                            if let product = GameData.product(item.productID) {
-                                quickButton("\(product.name) · \(item.quantity)", icon: product.icon) { offerTrade(product: product) }
-                            }
-                        }
-                        quickButton("Cancel", icon: "xmark") { offeredProductID = nil; action = .home }
-                    case .acceptedTrade:
-                        quickButton("Discuss price", icon: "dollarsign.circle") { beginPriceDiscussion() }
-                        quickButton("Confirm trade", icon: "checkmark.circle") { completeTrade() }
-                    case .discussingPrice:
-                        quickButton("Offer market price", icon: "equal.circle") { sendPriceOffer(multiplier: 1.0, label: "market price") }
-                        quickButton("Offer 10% less", icon: "arrow.down.circle") { sendPriceOffer(multiplier: 0.9, label: "10% below market") }
-                        quickButton("Offer 10% more", icon: "arrow.up.circle") { sendPriceOffer(multiplier: 1.1, label: "10% above market") }
-                        quickButton("Done", icon: "checkmark") { action = .home }
-                    }
-                }
-                .padding(.vertical, 1)
+                HStack(spacing: 8) { actionButtons }
             }
         }
-        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
+        .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 8)
         .background(Color(.systemBackground))
         .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5) }
     }
 
-    private var actionTitle: String {
-        switch action {
-        case .home: return "QUICK REPLIES"
-        case .choosingTrade: return "CHOOSE AN ITEM TO OFFER"
-        case .acceptedTrade: return "TRADE ACCEPTED · NEXT STEP"
-        case .discussingPrice: return "PRICE OPTIONS"
-        }
-    }
-
-    private func quickButton(_ title: String, icon: String, action handler: @escaping () -> Void) -> some View {
-        Button(action: handler) {
-            Label(title, systemImage: icon).font(.caption.bold()).lineLimit(1)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .background(Color.green.opacity(0.12)).foregroundStyle(.green)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func restoreAction() {
-        guard !didRestoreAction else { return }
-        didRestoreAction = true
-        guard let offer = messages.last(where: { $0.isFromPlayer && $0.offeredProductID != nil }),
-              let productID = offer.offeredProductID else { return }
-        offeredProductID = productID
-        let laterMessages = messages.filter { $0.date > offer.date }
-        if laterMessages.contains(where: { $0.isFromPlayer && $0.text.hasPrefix("Trade completed:") }) {
-            offeredProductID = nil
-            return
-        }
-        if let reply = laterMessages.last(where: { !$0.isFromPlayer }) {
-            if reply.text.hasPrefix("Trade accepted") || reply.text.contains("offer is fair") {
-                action = .acceptedTrade
-            } else if reply.text.hasPrefix("I’ll pass") {
-                offeredProductID = nil
-                action = .choosingTrade
+    @ViewBuilder private var actionButtons: some View {
+        if action == .shipping || !shipments.isEmpty {
+            Text("Your package is on the way. Check back when it arrives.").font(.caption).foregroundStyle(.secondary)
+        } else if let offer = incomingOffer {
+            if action == .negotiatingSale {
+                quickButton("Accept · \(Formatters.moneyPrecise(offer.listingPrice ?? 0))", icon: "checkmark.circle") { acceptListingOffer(offer) }
+                quickButton("Ask listing price", icon: "dollarsign.circle", enabled: negotiationCount < 4) { counterListingOffer(offer, multiplier: 1) }
+                quickButton("Ask 5% more", icon: "arrow.up", enabled: negotiationCount < 4) { counterListingOffer(offer, multiplier: 1.05) }
+                quickButton("Ask 10% more", icon: "arrow.up", enabled: negotiationCount < 4) { counterListingOffer(offer, multiplier: 1.1) }
+                quickButton("Ask 20% more", icon: "arrow.up.right", enabled: negotiationCount < 4) { counterListingOffer(offer, multiplier: 1.2) }
+                quickButton("Decline", icon: "xmark.circle") { declineListingOffer(offer) }
+            } else {
+                quickButton("Accept · \(Formatters.moneyPrecise(offer.listingPrice ?? 0))", icon: "checkmark.circle") { acceptListingOffer(offer) }
+                quickButton("Negotiate", icon: "dollarsign.circle") { action = .negotiatingSale; negotiationCount = 0 }
+                quickButton("Decline", icon: "xmark.circle") { declineListingOffer(offer) }
+            }
+        } else {
+            switch action {
+            case .home:
+                if npc.kind == .seller {
+                    quickButton("What do you have?", icon: "shippingbox") { browseStock() }
+                } else {
+                    quickButton("Ask if they want an item", icon: "tag") { action = .choosingItem }
+                }
+            case .browsingStock:
+                if stockItems.isEmpty { Text("They’re out of stock for now.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(stockItems) { item in
+                    if let product = GameData.product(item.productID) {
+                        quickButton("\(product.name) · \(Formatters.moneyPrecise(item.unitPrice)) · \(item.quantity) left", icon: product.icon) { askAbout(item) }
+                    }
+                }
+                quickButton("Back", icon: "chevron.left") { action = .home }
+            case .negotiatingPurchase:
+                if let item = activeStock {
+                    quickButton("Buy at \(Formatters.moneyPrecise(item.unitPrice))", icon: "bag") { buyFromSeller(at: item.unitPrice) }
+                    quickButton("Offer 20% less", icon: "arrow.down", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.8) }
+                    quickButton("Offer 10% less", icon: "arrow.down.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.9) }
+                    quickButton("Offer 5% less", icon: "arrow.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.95) }
+                    quickButton("Offer 2% less", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.98) }
+                }
+            case .readyToPurchase:
+                quickButton("Buy for \(Formatters.moneyPrecise(agreedPrice))", icon: "bag.fill") { buyFromSeller(at: agreedPrice) }
+                quickButton("Back to stock", icon: "chevron.left") { action = .browsingStock }
+            case .choosingItem:
+                if sellableItems.isEmpty { Text("You need inventory before offering an item.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(sellableItems, id: \.productID) { item in
+                    if let product = GameData.product(item.productID) {
+                        quickButton("Offer \(product.name) · \(item.quantity)", icon: product.icon) { offerItemToBuyer(product) }
+                    }
+                }
+                quickButton("Cancel", icon: "xmark") { action = .home }
+            case .negotiatingSale:
+                if let product = activeProductID.flatMap(GameData.product) {
+                    quickButton("Sell at \(Formatters.moneyPrecise(targetPrice))", icon: "equal.circle", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice) }
+                    quickButton("Ask 10% more", icon: "arrow.up", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.1) }
+                    quickButton("Ask 20% more", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 1.2) }
+                    quickButton("Offer 10% less", icon: "arrow.down", enabled: negotiationCount < 4) { makeBuyerOffer(targetPrice * 0.9) }
+                    Text(product.name).hidden()
+                }
+            case .readyToShip:
+                quickButton("Ship for \(Formatters.moneyPrecise(agreedPrice))", icon: "shippingbox.fill") { shipToBuyer() }
+                quickButton("Cancel", icon: "xmark") { action = .home }
+            case .shipping: EmptyView()
             }
         }
     }
 
-    private func toggleFollow() {
-        let player = engine.fetchPlayer()
-        if let rel = followedAll.first(where: { $0.npcID == npc.id }) {
-            rel.isFollowing.toggle()
-            player.following += rel.isFollowing ? 1 : -1
-        } else {
-            context.insert(FollowedNPC(npcID: npc.id))
-            player.following += 1
+    private var actionTitle: String {
+        if !shipments.isEmpty { return "IN TRANSIT · 5–10 MINUTES" }
+        if incomingOffer != nil { return "CUSTOMER OFFER" }
+        switch action {
+        case .home: return npc.kind == .seller ? "QUICK REPLIES" : "CUSTOMER CHAT"
+        case .browsingStock: return "AVAILABLE STOCK"
+        case .negotiatingPurchase, .negotiatingSale: return "PRICE TALK · \(negotiationCount)/4"
+        case .readyToPurchase: return "PRICE ACCEPTED"
+        case .choosingItem: return "CHOOSE FROM YOUR INVENTORY"
+        case .readyToShip: return "OFFER ACCEPTED"
+        case .shipping: return "IN TRANSIT"
         }
-        try? context.save()
     }
 
-    private func offerTrade(product: ProductDef) {
-        offeredProductID = product.id
-        agreedPriceMultiplier = 1
-        let message = "Trade offer: I can offer \(product.name). Would you take it?"
-        context.insert(MessageRecord(npcID: npc.id, text: message, isFromPlayer: true, offeredProductID: product.id))
-        let suitable = npc.kind == .seller || product.category == .collectibles || product.category == .electronics || product.category == .luxury
-        let relationship = followedAll.first { $0.npcID == npc.id }?.relationship ?? 0
-        let accepted = suitable && (npc.kind == .seller || relationship >= 2 || product.basePrice <= 500)
-        let reply = accepted
-            ? "Trade accepted — \(product.name) works for me. Want to discuss the price?"
-            : "I’ll pass on \(product.name) for now. Do you have something else?"
-        context.insert(MessageRecord(npcID: npc.id, text: reply, isFromPlayer: false))
-        if !accepted { offeredProductID = nil }
-        action = accepted ? .acceptedTrade : .choosingTrade
-        try? context.save()
+    private func quickButton(_ title: String, icon: String, enabled: Bool = true, action handler: @escaping () -> Void) -> some View {
+        Button(action: handler) {
+            Label(title, systemImage: icon).font(.caption.bold()).lineLimit(1)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Color.green.opacity(0.12)).foregroundStyle(.green).clipShape(Capsule())
+        }
+        .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.45)
     }
 
-    private func beginPriceDiscussion() {
-        send("Let’s make a deal. Can we discuss the price?", reply: "Sure. Choose an offer around today’s market price.")
-        action = .discussingPrice
+    private func browseStock() {
+        _ = engine.stock(for: npc.id)
+        action = .browsingStock
+        send("What do you have in stock?", reply: stockItems.isEmpty ? "I’m out of stock right now." : "Here’s what I have available. Items ship after payment clears.")
     }
 
-    private func sendPriceOffer(multiplier: Double, label: String) {
-        let accepted = multiplier >= 0.95
-        let reply = accepted ? "That \(label) offer is fair. We have a deal." : "That’s a little low. I can meet you at market price."
-        send("I’d like to offer \(label).", reply: reply)
+    private func askAbout(_ item: NPCStockItem) {
+        guard item.quantity > 0 else { send("Do you still have that in stock?", reply: "Sorry, I just sold the last one."); return }
+        activeStockID = item.persistentModelID
+        activeProductID = item.productID
+        targetPrice = item.unitPrice
+        agreedPrice = item.unitPrice
+        negotiationCount = messages.filter { $0.isFromPlayer && $0.offeredProductID == item.productID }.count
+        action = negotiationCount >= 4 ? .readyToPurchase : .negotiatingPurchase
+        let name = GameData.product(item.productID)?.name ?? "item"
+        let reply = negotiationCount >= 4
+            ? "Yes, it’s still available. We’ve already used the four offer limit, so my listed price of \(Formatters.moneyPrecise(item.unitPrice)) is firm."
+            : "Yes, I have \(item.quantity) in stock. My price is \(Formatters.moneyPrecise(item.unitPrice)). You can buy now or make an offer."
+        send("Do you still have \(name)? I’m interested in one.", reply: reply)
+    }
+
+    private func makeSellerOffer(_ offer: Double) {
+        guard let item = activeStock, negotiationCount < 4 else { return }
+        negotiationCount += 1
+        let floor = sellerPriceFloor(rating: rating)
+        let accepted = offer >= item.unitPrice * floor
         if accepted {
-            agreedPriceMultiplier = multiplier
-            action = offeredProductID == nil ? .home : .acceptedTrade
+            agreedPrice = offer
+            action = .readyToPurchase
+            send("Would you take \(Formatters.moneyPrecise(offer))?", reply: "Yes, I’ll accept \(Formatters.moneyPrecise(offer)). Want me to ship it?", offeredProductID: item.productID)
         } else {
-            action = .discussingPrice
+            let left = 4 - negotiationCount
+            let reply = left == 0 ? "That’s too low. My listed price is firm; that was the last offer." : "I can’t go that low. My best is \(Formatters.moneyPrecise(item.unitPrice)). You have \(left) offer\(left == 1 ? "" : "s") left."
+            send("Would you take \(Formatters.moneyPrecise(offer))?", reply: reply, offeredProductID: item.productID)
+            if left == 0 { action = .readyToPurchase; agreedPrice = item.unitPrice }
         }
     }
 
-    private func completeTrade() {
-        guard let offeredProductID,
-              let item = sellableItems.first(where: { $0.productID == offeredProductID }),
-              item.quantity > 0 else {
-            send("I can’t complete that trade now.", reply: "No problem. Let me know when you have it ready.")
+    private func sellerPriceFloor(rating: Double) -> Double {
+        switch rating {
+        case ..<1.5: return 0.55
+        case ..<2.5: return 0.65
+        case ..<3.5: return 0.80
+        case ..<4.5: return 0.92
+        default: return 0.98
+        }
+    }
+
+    private func buyFromSeller(at price: Double) {
+        guard let item = activeStock else { send("Is that item still available?", reply: "Sorry, it just sold out."); action = .home; return }
+        if engine.purchaseFromNPC(npcID: npc.id, stockItem: item, unitPrice: price) {
+            send("I’ll take one at \(Formatters.moneyPrecise(price)). Please ship it.", reply: "Confirmed. Your order is on its way; delivery takes 5–10 minutes.")
+            action = .shipping
+        } else {
+            send("I can’t complete the purchase yet.", reply: "Check your balance or stock and try again.")
+        }
+    }
+
+    private func offerItemToBuyer(_ product: ProductDef) {
+        guard let item = sellableItems.first(where: { $0.productID == product.id }), item.quantity > 0 else { return }
+        activeProductID = product.id
+        targetPrice = engine.price(for: product.id)
+        agreedPrice = targetPrice
+        negotiationCount = 0
+        let wantsItem: Bool
+        switch npc.id {
+        case "n_dre", "n_mina": wantsItem = product.category == .collectibles || product.category == .electronics
+        case "n_aria": wantsItem = product.category == .luxury || product.category == .collectibles
+        case "n_sasha": wantsItem = product.basePrice >= 300
+        default: wantsItem = true
+        }
+        if wantsItem {
+            action = .negotiatingSale
+            send("I have a \(product.name) available. Interested?", reply: "Yes, I’m interested in one. I usually pay around \(Formatters.moneyPrecise(targetPrice)). What’s your price?")
+        } else {
+            action = .choosingItem
+            send("I have a \(product.name) available. Interested?", reply: "That’s not really what I collect. Do you have something else?")
+        }
+    }
+
+    private func makeBuyerOffer(_ offer: Double) {
+        guard negotiationCount < 4, activeProductID != nil else { return }
+        negotiationCount += 1
+        let ceiling = targetPrice * (1 + max(0, 5 - rating) * 0.08)
+        let accepted = offer <= ceiling
+        if accepted {
+            agreedPrice = offer
+            action = .readyToShip
+            send("Would you pay \(Formatters.moneyPrecise(offer))?", reply: "That works for me. Please send it and I’ll pay when it arrives.")
+        } else {
+            let left = 4 - negotiationCount
+            let reply = left == 0 ? "That’s above my limit. I can pay up to \(Formatters.moneyPrecise(ceiling)); final offer." : "That’s high for me. I can do \(Formatters.moneyPrecise(ceiling)). You have \(left) offer\(left == 1 ? "" : "s") left."
+            send("Would you pay \(Formatters.moneyPrecise(offer))?", reply: reply)
+            if left == 0 { agreedPrice = ceiling; action = .readyToShip }
+        }
+    }
+
+    private func shipToBuyer(listingOffer: MessageRecord? = nil, negotiatedPrice: Double? = nil) {
+        let productID = listingOffer?.listingProductID ?? activeProductID
+        let quantity = listingOffer?.listingQuantity ?? 1
+        guard let productID else { return }
+        let price = negotiatedPrice ?? listingOffer?.listingPrice ?? agreedPrice
+        let listingDate = listingOffer?.listingCreatedAt
+        guard engine.shipSale(npcID: npc.id, productID: productID, quantity: quantity, unitPrice: price, listingCreatedAt: listingDate) else {
+            send("I can’t ship that item now.", reply: "No problem. Check that it’s still available.")
             action = .home
             return
         }
-        let price = engine.price(for: offeredProductID) * agreedPriceMultiplier
-        if engine.sell(productID: offeredProductID, quantity: 1, unitPrice: price, toNPC: npc.id) {
-            engine.incrementObjectiveProgress(matching: { $0.objectiveID == "obj_sell3" })
-            send("Trade completed: one \(GameData.product(offeredProductID)?.name ?? "item") at \(Formatters.moneyPrecise(price)).", reply: "Trade complete. Thanks — let’s work together again.")
-        }
-        action = .home
-        self.offeredProductID = nil
+        let name = GameData.product(productID)?.name ?? "item"
+        send("Deal. I’m shipping \(quantity) \(name) for \(Formatters.moneyPrecise(price)) each.", reply: "Agreed. I’ll pay as soon as it arrives. Shipping takes 5–10 minutes.")
+        action = .shipping
     }
 
-    private func send(_ text: String, reply: String) {
-        context.insert(MessageRecord(npcID: npc.id, text: text, isFromPlayer: true))
+    private func acceptListingOffer(_ offer: MessageRecord) {
+        shipToBuyer(listingOffer: offer)
+    }
+
+    private func counterListingOffer(_ offer: MessageRecord, multiplier: Double) {
+        guard negotiationCount < 4,
+              let ask = listingAll.first(where: { $0.productID == offer.listingProductID && $0.createdAt == offer.listingCreatedAt })?.price else { return }
+        negotiationCount += 1
+        let counter = ask * multiplier
+        let ceiling = (offer.listingPrice ?? 0) * (1 + max(0, 5 - rating) * 0.08)
+        if counter <= ceiling {
+            send("I can do \(Formatters.moneyPrecise(counter)) each.", reply: "That works for me. Please ship it and I’ll pay on arrival.", listingCreatedAt: offer.listingCreatedAt)
+            shipToBuyer(listingOffer: offer, negotiatedPrice: counter)
+            return
+        }
+        let remaining = 4 - negotiationCount
+        let response = remaining == 0
+            ? "I can’t go that high. My final offer is \(Formatters.moneyPrecise(ceiling))."
+            : "That’s too high for me. My best is \(Formatters.moneyPrecise(ceiling)); you have \(remaining) offer\(remaining == 1 ? "" : "s") left."
+        send("I can do \(Formatters.moneyPrecise(counter)) each.", reply: response, listingCreatedAt: offer.listingCreatedAt)
+        if remaining == 0 {
+            action = .home
+            try? context.save()
+        }
+    }
+
+    private func declineListingOffer(_ offer: MessageRecord) {
+        context.insert(MessageRecord(npcID: npc.id, text: "Thanks, but I’ll pass on this offer.", isFromPlayer: true, listingCreatedAt: offer.listingCreatedAt))
+        context.insert(MessageRecord(npcID: npc.id, text: "No worries. Message me if you change your mind.", isFromPlayer: false))
+        try? context.save()
+    }
+
+    private func restoreDeal() {
+        guard shipments.isEmpty else { action = .shipping; return }
+        if let offer = incomingOffer {
+            negotiationCount = messages.filter { $0.isFromPlayer && $0.listingCreatedAt == offer.listingCreatedAt }.count
+            if negotiationCount > 0 { action = .negotiatingSale }
+            return
+        }
+        if let offer = messages.last(where: { $0.isFromPlayer && $0.text.hasPrefix("Would you take ") }),
+           let acceptedReply = messages.last(where: { !$0.isFromPlayer && $0.text.hasPrefix("Yes, I’ll accept") }), acceptedReply.date > offer.date {
+            action = .readyToPurchase
+        }
+    }
+
+    private func toggleFollow() {
+        let profile = engine.fetchPlayer()
+        if let rel = followedAll.first(where: { $0.npcID == npc.id }) {
+            rel.isFollowing.toggle(); profile.following += rel.isFollowing ? 1 : -1
+        } else {
+            context.insert(FollowedNPC(npcID: npc.id)); profile.following += 1
+        }
+        try? context.save()
+    }
+
+    private func send(_ text: String, reply: String, listingCreatedAt: Date? = nil, offeredProductID: String? = nil) {
+        context.insert(MessageRecord(npcID: npc.id, text: text, isFromPlayer: true, offeredProductID: offeredProductID, listingCreatedAt: listingCreatedAt))
         context.insert(MessageRecord(npcID: npc.id, text: reply, isFromPlayer: false, date: .now.addingTimeInterval(1)))
         try? context.save()
     }
