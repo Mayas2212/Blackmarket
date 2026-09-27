@@ -65,6 +65,9 @@ enum ProductCategory: String, CaseIterable, Codable {
     case luxury = "Luxury Items"
     case documents = "Documents"
     case tech = "Tech & Data"
+    case fashion = "Fashion"
+    case audio = "Audio & Home"
+    case books = "Books & Media"
 }
 
 struct ProductDef: Identifiable, Codable, Hashable {
@@ -136,7 +139,22 @@ enum GameData {
         ProductDef(id: "p_watch_real", name: "Luxury Watches", category: .luxury, basePrice: 1800, unlockLevel: .reseller, icon: "watch.analog", volatility: 0.1, riskTier: 2),
         ProductDef(id: "p_counterfeit", name: "Counterfeit Luxury Watches", category: .luxury, basePrice: 140, unlockLevel: .newcomer, icon: "clock.badge.xmark", volatility: 0, riskTier: 2, fixedPrice: true),
         ProductDef(id: "p_antiques", name: "Vintage Antiques", category: .collectibles, basePrice: 650, unlockLevel: .dealer, icon: "lamp.desk.fill", volatility: 0.13, riskTier: 2),
-        ProductDef(id: "p_artprint", name: "Rare Art Prints", category: .collectibles, basePrice: 1100, unlockLevel: .broker, icon: "photo.artframe", volatility: 0.18, riskTier: 2)
+        ProductDef(id: "p_artprint", name: "Rare Art Prints", category: .collectibles, basePrice: 1100, unlockLevel: .broker, icon: "photo.artframe", volatility: 0.18, riskTier: 2),
+        ProductDef(id: "p_comics", name: "Rare Comic Issues", category: .books, basePrice: 95, unlockLevel: .runner, icon: "book.closed.fill", volatility: 0.12, riskTier: 1),
+        ProductDef(id: "p_firstpress", name: "First-Press Vinyl", category: .books, basePrice: 180, unlockLevel: .runner, icon: "opticaldisc.fill", volatility: 0.11, riskTier: 1),
+        ProductDef(id: "p_headphones", name: "Studio Headphones", category: .audio, basePrice: 260, unlockLevel: .reseller, icon: "headphones", volatility: 0.12, riskTier: 1),
+        ProductDef(id: "p_speakers", name: "Vintage Speakers", category: .audio, basePrice: 540, unlockLevel: .dealer, icon: "hifispeaker.fill", volatility: 0.16, riskTier: 2),
+        ProductDef(id: "p_bag", name: "Designer Bags", category: .fashion, basePrice: 900, unlockLevel: .dealer, icon: "bag.fill", volatility: 0.17, riskTier: 2),
+        ProductDef(id: "p_archivecoat", name: "Archive Jackets", category: .fashion, basePrice: 420, unlockLevel: .dealer, icon: "tshirt.fill", volatility: 0.14, riskTier: 1),
+        ProductDef(id: "p_keyboard", name: "Custom Keyboards", category: .electronics, basePrice: 210, unlockLevel: .reseller, icon: "keyboard.fill", volatility: 0.13, riskTier: 1),
+        ProductDef(id: "p_projector", name: "Vintage Projectors", category: .electronics, basePrice: 380, unlockLevel: .reseller, icon: "video.fill", volatility: 0.15, riskTier: 2),
+        ProductDef(id: "p_sculpture", name: "Studio Sculptures", category: .collectibles, basePrice: 1450, unlockLevel: .broker, icon: "sparkles", volatility: 0.2, riskTier: 2),
+        ProductDef(id: "p_collectorwatch", name: "Collector Watches", category: .luxury, basePrice: 2800, unlockLevel: .established, icon: "watch.analog", volatility: 0.13, riskTier: 2),
+        ProductDef(id: "p_fragrance", name: "Rare Fragrances", category: .fashion, basePrice: 160, unlockLevel: .reseller, icon: "drop.fill", volatility: 0.1, riskTier: 1),
+        ProductDef(id: "p_rarebook", name: "First-Edition Books", category: .books, basePrice: 720, unlockLevel: .broker, icon: "books.vertical.fill", volatility: 0.17, riskTier: 2),
+        ProductDef(id: "p_earbuds", name: "Wireless Earbuds", category: .audio, basePrice: 75, unlockLevel: .newcomer, icon: "earbuds", volatility: 0.08, riskTier: 1),
+        ProductDef(id: "p_zines", name: "Indie Art Zines", category: .books, basePrice: 35, unlockLevel: .newcomer, icon: "book.closed.fill", volatility: 0.09, riskTier: 1),
+        ProductDef(id: "p_denim", name: "Vintage Denim Jackets", category: .fashion, basePrice: 110, unlockLevel: .newcomer, icon: "tshirt.fill", volatility: 0.1, riskTier: 1)
     ]
 
     static let cryptocurrencies: [CryptoDef] = [
@@ -144,18 +162,23 @@ enum GameData {
         CryptoDef(id: "SMP_RATE", name: "SMP300", symbol: "SMP", initialPrice: 320),
         CryptoDef(id: "ETH_RATE", name: "Ether", symbol: "Ξ", initialPrice: 2400),
         CryptoDef(id: "SOL_RATE", name: "Solana", symbol: "◎", initialPrice: 145),
-        CryptoDef(id: "DOGE_RATE", name: "Dogecoin", symbol: "Ð", initialPrice: 0.16)
+        CryptoDef(id: "DOGE_RATE", name: "Dogecoin", symbol: "Ð", initialPrice: 0.16),
+        CryptoDef(id: "LTC_RATE", name: "Litecoin", symbol: "Ł", initialPrice: 92),
+        CryptoDef(id: "ADA_RATE", name: "Cardano", symbol: "₳", initialPrice: 0.44),
+        CryptoDef(id: "AVAX_RATE", name: "Avalanche", symbol: "AVAX", initialPrice: 36),
+        CryptoDef(id: "LINK_RATE", name: "Chainlink", symbol: "LINK", initialPrice: 14)
     ]
 
     static let suppliers: [SupplierDef] = [
-        SupplierDef(id: "s_alley", name: "Alley Contacts", unlockLevel: .newcomer, repRequired: 0, productIDs: ["p_burner", "p_watch"], discount: 0.0, icon: "figure.walk"),
-        SupplierDef(id: "s_lowkey", name: "Lowkey Imports", unlockLevel: .runner, repRequired: 40, productIDs: ["p_herb", "p_cards"], discount: 0.05, icon: "shippingbox.fill"),
-        SupplierDef(id: "s_midtier", name: "Midtier Logistics", unlockLevel: .reseller, repRequired: 150, productIDs: ["p_pills", "p_data"], discount: 0.08, icon: "truck.box.fill"),
-        SupplierDef(id: "s_backroom", name: "Backroom Network", unlockLevel: .dealer, repRequired: 350, productIDs: ["p_docs", "p_jewel"], discount: 0.1, icon: "lock.rectangle.stack.fill"),
+        SupplierDef(id: "s_alley", name: "Alley Contacts", unlockLevel: .newcomer, repRequired: 0, productIDs: ["p_burner", "p_watch", "p_vinyl", "p_console"], discount: 0.0, icon: "figure.walk"),
+        SupplierDef(id: "s_lowkey", name: "Lowkey Imports", unlockLevel: .runner, repRequired: 40, productIDs: ["p_herb", "p_cards", "p_comics", "p_firstpress"], discount: 0.05, icon: "shippingbox.fill"),
+        SupplierDef(id: "s_midtier", name: "Midtier Logistics", unlockLevel: .reseller, repRequired: 150, productIDs: ["p_pills", "p_data", "p_headphones", "p_keyboard", "p_projector"], discount: 0.08, icon: "truck.box.fill"),
+        SupplierDef(id: "s_backroom", name: "Backroom Network", unlockLevel: .dealer, repRequired: 350, productIDs: ["p_docs", "p_jewel", "p_bag", "p_archivecoat", "p_speakers"], discount: 0.1, icon: "lock.rectangle.stack.fill"),
         SupplierDef(id: "s_broker", name: "The Broker's Circle", unlockLevel: .broker, repRequired: 700, productIDs: ["p_art", "p_tech2"], discount: 0.12, icon: "person.3.fill"),
         SupplierDef(id: "s_vault", name: "Vault Connections", unlockLevel: .established, repRequired: 1200, productIDs: ["p_gold"], discount: 0.1, icon: "building.columns.fill"),
         SupplierDef(id: "s_offshore", name: "Offshore Channel", unlockLevel: .trusted, repRequired: 2000, productIDs: ["p_ledger"], discount: 0.15, icon: "globe"),
-        SupplierDef(id: "s_shadow", name: "Shadow Syndicate", unlockLevel: .elite, repRequired: 3200, productIDs: ["p_chip"], discount: 0.18, icon: "crown.fill")
+        SupplierDef(id: "s_shadow", name: "Shadow Syndicate", unlockLevel: .elite, repRequired: 3200, productIDs: ["p_chip", "p_collectorwatch"], discount: 0.18, icon: "crown.fill"),
+        SupplierDef(id: "s_archive", name: "Archive House", unlockLevel: .broker, repRequired: 700, productIDs: ["p_rarebook", "p_sculpture", "p_artprint"], discount: 0.1, icon: "books.vertical.fill")
     ]
 
     static let npcs: [NPCDef] = [
@@ -169,7 +192,16 @@ enum GameData {
         NPCDef(id: "n_mina", name: "Mina R.", avatarSymbol: "person.crop.circle", kind: .buyer, bio: "Vintage finds and collectible records.", baseRatingSeed: 5),
         NPCDef(id: "n_jules", name: "Jules", avatarSymbol: "person.circle.fill", kind: .seller, bio: "Sneakers, cameras, and retro games.", baseRatingSeed: 4),
         NPCDef(id: "n_aria", name: "Aria S.", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Curates a growing luxury collection.", baseRatingSeed: 5),
-        NPCDef(id: "n_niko", name: "Niko", avatarSymbol: "person.circle", kind: .seller, bio: "Antiques and one-of-a-kind pieces.", baseRatingSeed: 4)
+        NPCDef(id: "n_niko", name: "Niko", avatarSymbol: "person.circle", kind: .seller, bio: "Antiques and one-of-a-kind pieces.", baseRatingSeed: 4),
+        NPCDef(id: "n_theo", name: "Theo Park", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Comic books, records, and pop-culture finds.", baseRatingSeed: 4),
+        NPCDef(id: "n_priya", name: "Priya Shah", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Carefully tested audio and camera gear.", baseRatingSeed: 5),
+        NPCDef(id: "n_mateo", name: "Mateo Cruz", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Archive fashion and rare accessories.", baseRatingSeed: 3),
+        NPCDef(id: "n_yuna", name: "Yuna Ito", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Custom electronics sourced from local makers.", baseRatingSeed: 4),
+        NPCDef(id: "n_ellis", name: "Ellis Moore", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Looking for designer pieces and collector watches.", baseRatingSeed: 4),
+        NPCDef(id: "n_noor", name: "Noor Ahmed", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Avid reader and collector of first editions.", baseRatingSeed: 5),
+        NPCDef(id: "n_finn", name: "Finn Taylor", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Building a studio and audio collection.", baseRatingSeed: 3),
+        NPCDef(id: "n_gabriel", name: "Gabriel Chen", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Always interested in clever new technology.", baseRatingSeed: 4),
+        NPCDef(id: "n_cassia", name: "Cassia Reed", avatarSymbol: "person.crop.circle.fill", kind: .rival, bio: "A sharp reseller who knows the latest market prices.", baseRatingSeed: 2)
     ]
 
     static let achievements: [AchievementDef] = [
@@ -187,7 +219,10 @@ enum GameData {
         AchievementDef(id: "a_10_followers", title: "Rising Profile", description: "Build your network to 25 followers.", icon: "person.2.badge.plus.fill"),
         AchievementDef(id: "a_5_coins", title: "Altcoin Collector", description: "Buy a simulated coin besides Bitcoin.", icon: "bitcoinsign"),
         AchievementDef(id: "a_20k_profit", title: "Market Maker", description: "Reach $20,000 net worth.", icon: "chart.xyaxis.line"),
-        AchievementDef(id: "a_5_contacts", title: "People Person", description: "Follow five contacts.", icon: "person.3.sequence.fill")
+        AchievementDef(id: "a_5_contacts", title: "People Person", description: "Follow five contacts.", icon: "person.3.sequence.fill"),
+        AchievementDef(id: "a_10_contacts", title: "Inner Circle", description: "Follow ten contacts.", icon: "person.3.fill"),
+        AchievementDef(id: "a_5_products", title: "Collector’s Shelf", description: "Hold five different products at once.", icon: "square.grid.2x2.fill"),
+        AchievementDef(id: "a_3_coins", title: "Market Basket", description: "Hold three different simulated cryptocurrencies.", icon: "chart.pie.fill")
     ]
 
     static func product(_ id: String) -> ProductDef? { products.first { $0.id == id } }

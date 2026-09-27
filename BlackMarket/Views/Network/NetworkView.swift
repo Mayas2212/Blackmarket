@@ -456,7 +456,10 @@ struct NPCChatView: View {
         let wantsItem: Bool
         switch npc.id {
         case "n_dre", "n_mina": wantsItem = product.category == .collectibles || product.category == .electronics
-        case "n_aria": wantsItem = product.category == .luxury || product.category == .collectibles
+        case "n_aria", "n_ellis": wantsItem = product.category == .luxury || product.category == .collectibles || product.category == .fashion
+        case "n_noor": wantsItem = product.category == .books || product.category == .collectibles
+        case "n_finn": wantsItem = product.category == .audio || product.category == .electronics
+        case "n_gabriel": wantsItem = product.category == .tech || product.category == .electronics
         case "n_sasha": wantsItem = product.basePrice >= 300
         default: wantsItem = true
         }
@@ -554,6 +557,7 @@ struct NPCChatView: View {
         } else {
             context.insert(FollowedNPC(npcID: npc.id)); profile.following += 1
         }
+        engine.checkAchievements()
         try? context.save()
     }
 

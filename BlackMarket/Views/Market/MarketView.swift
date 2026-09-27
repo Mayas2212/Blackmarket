@@ -12,6 +12,12 @@ struct MarketView: View {
 
     private var player: PlayerState? { players.first }
 
+    private var availableCategories: [ProductCategory] {
+        guard let player else { return [] }
+        let unlocked = Set(engine.availableProducts(for: player).map(\.category))
+        return ProductCategory.allCases.filter { unlocked.contains($0) }
+    }
+
     private var availableProducts: [ProductDef] {
         guard let player else { return [] }
         let all = engine.availableProducts(for: player)
@@ -84,7 +90,7 @@ struct MarketView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack {
                 categoryChip(nil, title: "All")
-                ForEach(ProductCategory.allCases, id: \.self) { cat in
+                ForEach(availableCategories, id: \.self) { cat in
                     categoryChip(cat, title: cat.rawValue)
                 }
             }

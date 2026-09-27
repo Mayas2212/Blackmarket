@@ -34,9 +34,12 @@ final class GameEngine {
             context.insert(PriceOverride(productID: coin.id, currentPrice: coin.initialPrice))
         }
         let snapshots = (try? context.fetch(FetchDescriptor<PriceSnapshot>())) ?? []
-        if snapshots.isEmpty {
-            for product in GameData.products { context.insert(PriceSnapshot(assetID: product.id, price: product.basePrice)) }
-            for coin in GameData.cryptocurrencies { context.insert(PriceSnapshot(assetID: coin.id, price: coin.initialPrice)) }
+        let snapshotIDs = Set(snapshots.map(\.assetID))
+        for product in GameData.products where !snapshotIDs.contains(product.id) {
+            context.insert(PriceSnapshot(assetID: product.id, price: product.basePrice))
+        }
+        for coin in GameData.cryptocurrencies where !snapshotIDs.contains(coin.id) {
+            context.insert(PriceSnapshot(assetID: coin.id, price: coin.initialPrice))
         }
         try? context.save()
     }
@@ -128,13 +131,18 @@ final class GameEngine {
         case "n_sasha", "n_niko": 450
         case "n_omar", "n_ivy": 100
         case "n_the_broker": 700
+        case "n_theo": 50
+        case "n_priya", "n_noor": 100
+        case "n_finn": 150
+        case "n_ellis": 250
+        case "n_mateo", "n_cassia": 350
+        case "n_gabriel", "n_yuna": 450
         default: 0
         }
     }
 
     func stock(for npcID: String) -> [NPCStockItem] {
-        let all = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
-        if !all.contains(where: { $0.npcID == npcID }), let npc = GameData.npc(npcID), npc.kind == .seller {
+        if let npc = GameData.npc(npcID), npc.kind == .seller {
             seedStock(for: npc)
         }
         let updated = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
@@ -143,13 +151,18 @@ final class GameEngine {
 
     private func seedStock(for npc: NPCDef) {
         let existing = (try? context.fetch(FetchDescriptor<NPCStockItem>())) ?? []
-        guard !existing.contains(where: { $0.npcID == npc.id }) else { return }
         let player = fetchPlayer()
-        var choices = GameData.products.filter { !$0.fixedPrice }
-        if npc.id == "n_lena" { choices = choices.filter { $0.category == .herbal || $0.category == .collectibles } }
-        if npc.id == "n_omar" || npc.id == "n_jules" { choices = choices.filter { $0.category == .electronics || $0.category == .tech || $0.category == .collectibles } }
-        if npc.id == "n_niko" { choices = choices.filter { $0.category == .collectibles || $0.category == .luxury } }
-        let selected = Array(choices.shuffled().prefix(5))
+        let existingForNPC = existing.filter { $0.npcID == npc.id }
+        let existingProductIDs = Set(existingForNPC.map(\.productID))
+        var choices = GameData.products.filter { $0.unlockLevel.rawValue <= player.levelRaw }
+        if npc.id == "n_lena" { choices = choices.filter { $0.category == .herbal || $0.category == .collectibles || $0.category == .books } }
+        if ["n_omar", "n_jules", "n_priya"].contains(npc.id) { choices = choices.filter { $0.category == .electronics || $0.category == .tech || $0.category == .collectibles || $0.category == .audio } }
+        if ["n_niko", "n_theo"].contains(npc.id) { choices = choices.filter { $0.category == .collectibles || $0.category == .luxury || $0.category == .books } }
+        if npc.id == "n_mateo" { choices = choices.filter { $0.category == .fashion || $0.category == .luxury } }
+        if npc.id == "n_yuna" { choices = choices.filter { $0.category == .electronics || $0.category == .tech || $0.category == .audio } }
+        let slots = max(0, 5 - existingForNPC.count)
+        let selected = Array(choices.filter { !existingProductIDs.contains($0.id) }.shuffled().prefix(slots))
+        guard !selected.isEmpty else { return }
         for product in selected {
             let markup = product.fixedPrice ? 1 : Double.random(in: 1.0...1.2)
             context.insert(NPCStockItem(npcID: npc.id, productID: product.id, quantity: Int.random(in: 3...12), unitPrice: price(for: product.id) * markup))
@@ -265,6 +278,7 @@ final class GameEngine {
         }
 
         context.insert(TransactionRecord(type: .buy, productID: productID, quantity: quantity, unitPrice: unitPrice, total: -total, note: "Bought from \(supplier?.name ?? "market")"))
+        checkAchievements()
         try? context.save()
         return true
     }
@@ -535,6 +549,10 @@ final class GameEngine {
         let contactCount = ((try? context.fetch(FetchDescriptor<FollowedNPC>())) ?? []).filter { $0.isFollowing }.count
         if contactCount >= 5 { unlock("a_5_contacts") }
         if transactions().filter({ $0.type == .event && $0.note == "Profile listing created" }).count >= 5 { unlock("a_5_listings") }
+        if contactCount >= 10 { unlock("a_10_contacts") }
+        if inventory().filter({ $0.quantity > 0 }).count >= 5 { unlock("a_5_products") }
+        let heldCoins = ((try? context.fetch(FetchDescriptor<CryptoHolding>())) ?? []).filter { $0.amount > 0 }.count + (player.btc > 0 ? 1 : 0)
+        if heldCoins >= 3 { unlock("a_3_coins") }
     }
 
     // MARK: - BTC exchange (simulated only, never real payments)
