@@ -17,6 +17,19 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # The macos-14 runner ships several Xcode versions side by side.
+      # XcodeGen writes a project file in the newest format it knows
+      # about, which can be newer than whatever Xcode happens to be
+      # selected by default — pin to the latest stable one so the
+      # project format and the xcodebuild that reads it always match.
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show selected Xcode version
+        run: xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

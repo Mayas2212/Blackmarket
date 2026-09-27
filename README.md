@@ -131,6 +131,17 @@ If you'd rather skip sideloading tools entirely, a cloud-Mac rental
 service (e.g. MacinCloud) gives you a real Xcode GUI in the browser and
 lets you install straight from Xcode over USB or WiFi.
 
+### Troubleshooting CI
+
+- **"project ... is in a future Xcode project file format"** — the
+  runner has multiple Xcode versions installed, and XcodeGen wrote a
+  project file newer than whichever one was selected by default. The
+  workflow pins `xcode-version: latest-stable` before building to keep
+  the two in sync; if this ever recurs, that's the line to check first.
+- **Build product not found** — the "Package as unsigned .ipa" step
+  prints a `find` of everything under `build/` so you can see the
+  actual output path if Apple changes it in a future Xcode release.
+
 ## Core loop (fully functional, not a mockup)
 
 - **Buy**: Market tab → pick a product → pick a supplier (if unlocked) →
