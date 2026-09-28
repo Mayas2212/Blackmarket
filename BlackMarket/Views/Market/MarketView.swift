@@ -249,56 +249,87 @@ struct BuySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    HStack {
-                        Image(systemName: product.icon).foregroundStyle(.green)
-                        Text(product.name).font(.headline)
-                    }
-                    Text("Market price: \(Formatters.moneyPrecise(engine.price(for: product.id)))")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text(product.fixedPrice ? "Fixed-price item" : "Daily market price").font(.caption2).foregroundStyle(.secondary)
-                    PriceLineChart(history: engine.priceHistory(for: product.id))
-                }
-                Section("Supplier") {
-                    if suppliers.isEmpty {
-                        Text("Buying at market rate.").foregroundStyle(.secondary)
-                    } else {
-                        Picker("Supplier", selection: Binding(
-                            get: { selectedSupplierID ?? suppliers.first?.id ?? "" },
-                            set: { selectedSupplierID = $0 }
-                        )) {
-                            ForEach(suppliers) { s in
-                                Text("\(s.name) (-\(Int(s.discount * 100))%)").tag(s.id)
-                            }
-                        }
-                    }
-                }
-                Section("Quantity") {
-                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...99)
-                    Text("Storage: \(engine.storageUsed()) / \(engine.storageCapacity(for: player)) slots · incoming orders count too")
-                        .font(.caption).foregroundStyle(engine.canStore(quantity) ? .secondary : .orange)
-                }
-                Section {
-                    HStack {
-                        Text("Total")
-                        Spacer()
-                        Text(Formatters.moneyPrecise(total)).bold()
-                    }
-                }
-                Section {
-                    Button {
-                        if engine.buy(productID: product.id, quantity: quantity, supplier: supplier) {
-                            engine.incrementObjectiveProgress(matching: { $0.objectiveID == "obj_buy2" })
-                            dismiss()
-                        }
-                    } label: {
-                        Text("Confirm Purchase").frame(maxWidth: .infinity).bold()
-                    }
-                    .disabled((player?.cashUSD ?? 0) < total || !engine.canStore(quantity))
-                }
+                productSection
+                supplierSection
+                quantitySection
+                totalSection
+                purchaseSection
             }
             .navigationTitle("Buy")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
+    }
+
+    private var productSection: some View {
+        Section {
+            HStack {
+                Image(systemName: product.icon).foregroundStyle(.green)
+                Text(product.name).font(.headline)
+            }
+            Text("Market price: \(Formatters.moneyPrecise(engine.price(for: product.id)))")
+                .font(.caption).foregroundStyle(.secondary)
+            Text(product.fixedPrice ? "Fixed-price item" : "Daily market price")
+                .font(.caption2).foregroundStyle(.secondary)
+            PriceLineChart(history: engine.priceHistory(for: product.id))
+        }
+    }
+
+    private var supplierSection: some View {
+        Section("Supplier") {
+            if suppliers.isEmpty {
+                Text("Buying at market rate.").foregroundStyle(.secondary)
+            } else {
+                supplierPicker
+            }
+        }
+    }
+
+    private var supplierPicker: some View {
+        Picker("Supplier", selection: supplierSelection) {
+            ForEach(suppliers) { supplier in
+                Text("\(supplier.name) (-\(Int(supplier.discount * 100))%)").tag(supplier.id)
+            }
+        }
+    }
+
+    private var supplierSelection: Binding<String> {
+        Binding(
+            get: { selectedSupplierID ?? suppliers.first?.id ?? "" },
+            set: { selectedSupplierID = $0 }
+        )
+    }
+
+    private var quantitySection: some View {
+        Section("Quantity") {
+            Stepper("Quantity: \(quantity)", value: $quantity, in: 1...99)
+            Text("Storage: \(engine.storageUsed()) / \(engine.storageCapacity(for: player)) slots · incoming orders count too")
+                .font(.caption)
+                .foregroundStyle(engine.canStore(quantity) ? .secondary : .orange)
+        }
+    }
+
+    private var totalSection: some View {
+        Section {
+            HStack {
+                Text("Total")
+                Spacer()
+                Text(Formatters.moneyPrecise(total)).bold()
+            }
+        }
+    }
+
+    private var purchaseSection: some View {
+        Section {
+            Button(action: confirmPurchase) {
+                Text("Confirm Purchase").frame(maxWidth: .infinity).bold()
+            }
+            .disabled((player?.cashUSD ?? 0) < total || !engine.canStore(quantity))
+        }
+    }
+
+    private func confirmPurchase() {
+        guard engine.buy(productID: product.id, quantity: quantity, supplier: supplier) else { return }
+        engine.incrementObjectiveProgress(matching: { $0.objectiveID == "obj_buy2" })
+        dismiss()
     }
 }
