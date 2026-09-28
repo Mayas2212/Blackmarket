@@ -182,7 +182,7 @@ struct PriceLineChart: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, desiredCount: 3) { value in
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine().foregroundStyle(.secondary.opacity(0.12))
                 AxisValueLabel {
                     if let amount = value.as(Double.self) {
