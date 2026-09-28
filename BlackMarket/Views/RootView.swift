@@ -15,22 +15,23 @@ struct RootView: View {
             if let engine {
                 ZStack {
                     currentScreen
+                        .id(selectedTab)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 77).accessibilityHidden(true) }
-                    VStack {
-                        Spacer()
+                        .transition(.opacity.combined(with: .scale(scale: 0.985)))
+                }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
                         FloatingGlassTabBar(selection: $selectedTab, tint: accentColor)
                     }
-                    .ignoresSafeArea(.keyboard)
-                }
+                    .animation(.snappy(duration: 0.32), value: selectedTab)
                     .preferredColorScheme(darkMode ? .dark : .light)
                     .sheet(isPresented: $showAdmin) {
                         AdminView(engine: engine)
                     }
                     .onChange(of: scenePhase) { _, phase in
-                        if phase == .background {
-                            UserDefaults.standard.set(Date.now, forKey: "blackmarket.lastBackgroundAt")
-                        } else if phase == .active {
+                        if phase == .active {
+                            engine.deliverQueuedMessages()
+                            engine.refreshDailyObjectivesIfNeeded()
+                            engine.recordDailyVisit()
                             engine.simulateMarketTick()
                         }
                     }
@@ -65,6 +66,7 @@ struct RootView: View {
     private func setup() {
         let e = GameEngine(context: modelContext)
         e.bootstrapIfNeeded()
+        e.recordDailyVisit()
         engine = e
     }
 }

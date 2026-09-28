@@ -11,7 +11,12 @@ targets:
     platform: iOS
     sources:
       - path: BlackMarket
+        excludes:
+          - Resources/**
       - path: Assets.xcassets
+    resources:
+      - path: BlackMarket/Resources/message_sent.wav
+      - path: BlackMarket/Resources/message_received.wav
     info:
       path: Generated-Info.plist
       properties:

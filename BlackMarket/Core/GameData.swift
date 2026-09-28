@@ -80,6 +80,8 @@ struct ProductDef: Identifiable, Codable, Hashable {
     let volatility: Double
     let riskTier: Int
     var fixedPrice: Bool = false
+    var isCounterfeit: Bool = false
+    var publicAlias: String? = nil
 }
 
 struct CryptoDef: Identifiable, Codable, Hashable {
@@ -120,7 +122,7 @@ struct AchievementDef: Identifiable, Codable, Hashable {
 enum GameData {
     static let products: [ProductDef] = [
         ProductDef(id: "p_burner", name: "Burner Phones", category: .electronics, basePrice: 45, unlockLevel: .newcomer, icon: "phone.fill", volatility: 0.05, riskTier: 1),
-        ProductDef(id: "p_watch", name: "Replica Watches", category: .luxury, basePrice: 120, unlockLevel: .newcomer, icon: "clock.fill", volatility: 0, riskTier: 1, fixedPrice: true),
+        ProductDef(id: "p_watch", name: "Replica Watches", category: .luxury, basePrice: 120, unlockLevel: .newcomer, icon: "clock.fill", volatility: 0, riskTier: 3, fixedPrice: true, isCounterfeit: true, publicAlias: "Vintage Chronograph"),
         ProductDef(id: "p_herb", name: "Herbal Blend", category: .herbal, basePrice: 25, unlockLevel: .runner, icon: "leaf.fill", volatility: 0.15, riskTier: 2),
         ProductDef(id: "p_cards", name: "Rare Trading Cards", category: .collectibles, basePrice: 60, unlockLevel: .runner, icon: "rectangle.stack.fill", volatility: 0.1, riskTier: 1),
         ProductDef(id: "p_pills", name: "Grey Market Supplements", category: .pharma, basePrice: 80, unlockLevel: .reseller, icon: "pills.fill", volatility: 0.2, riskTier: 3),
@@ -137,7 +139,7 @@ enum GameData {
         ProductDef(id: "p_sneakers", name: "Collector Sneakers", category: .collectibles, basePrice: 240, unlockLevel: .runner, icon: "shoe.fill", volatility: 0.16, riskTier: 2),
         ProductDef(id: "p_camera", name: "Vintage Cameras", category: .electronics, basePrice: 320, unlockLevel: .runner, icon: "camera.fill", volatility: 0.12, riskTier: 1),
         ProductDef(id: "p_watch_real", name: "Luxury Watches", category: .luxury, basePrice: 1800, unlockLevel: .reseller, icon: "watch.analog", volatility: 0.1, riskTier: 2),
-        ProductDef(id: "p_counterfeit", name: "Counterfeit Luxury Watches", category: .luxury, basePrice: 140, unlockLevel: .newcomer, icon: "clock.badge.xmark", volatility: 0, riskTier: 2, fixedPrice: true),
+        ProductDef(id: "p_counterfeit", name: "Counterfeit Luxury Watches", category: .luxury, basePrice: 140, unlockLevel: .newcomer, icon: "clock.badge.xmark", volatility: 0, riskTier: 4, fixedPrice: true, isCounterfeit: true, publicAlias: "Collector Chronograph"),
         ProductDef(id: "p_antiques", name: "Vintage Antiques", category: .collectibles, basePrice: 650, unlockLevel: .dealer, icon: "lamp.desk.fill", volatility: 0.13, riskTier: 2),
         ProductDef(id: "p_artprint", name: "Rare Art Prints", category: .collectibles, basePrice: 1100, unlockLevel: .broker, icon: "photo.artframe", volatility: 0.18, riskTier: 2),
         ProductDef(id: "p_comics", name: "Rare Comic Issues", category: .books, basePrice: 95, unlockLevel: .runner, icon: "book.closed.fill", volatility: 0.12, riskTier: 1),
@@ -154,7 +156,13 @@ enum GameData {
         ProductDef(id: "p_rarebook", name: "First-Edition Books", category: .books, basePrice: 720, unlockLevel: .broker, icon: "books.vertical.fill", volatility: 0.17, riskTier: 2),
         ProductDef(id: "p_earbuds", name: "Wireless Earbuds", category: .audio, basePrice: 75, unlockLevel: .newcomer, icon: "earbuds", volatility: 0.08, riskTier: 1),
         ProductDef(id: "p_zines", name: "Indie Art Zines", category: .books, basePrice: 35, unlockLevel: .newcomer, icon: "book.closed.fill", volatility: 0.09, riskTier: 1),
-        ProductDef(id: "p_denim", name: "Vintage Denim Jackets", category: .fashion, basePrice: 110, unlockLevel: .newcomer, icon: "tshirt.fill", volatility: 0.1, riskTier: 1)
+        ProductDef(id: "p_denim", name: "Vintage Denim Jackets", category: .fashion, basePrice: 110, unlockLevel: .newcomer, icon: "tshirt.fill", volatility: 0.1, riskTier: 1),
+        ProductDef(id: "p_replica_bag", name: "Replica Designer Bags", category: .fashion, basePrice: 135, unlockLevel: .newcomer, icon: "bag.fill", volatility: 0, riskTier: 3, fixedPrice: true, isCounterfeit: true, publicAlias: "Archive Leather Handbag"),
+        ProductDef(id: "p_replica_sneakers", name: "Replica Collector Sneakers", category: .collectibles, basePrice: 95, unlockLevel: .newcomer, icon: "shoe.fill", volatility: 0, riskTier: 3, fixedPrice: true, isCounterfeit: true, publicAlias: "Limited Edition High Tops"),
+        ProductDef(id: "p_replica_camera", name: "Replica Vintage Camera", category: .electronics, basePrice: 160, unlockLevel: .runner, icon: "camera.fill", volatility: 0, riskTier: 4, fixedPrice: true, isCounterfeit: true, publicAlias: "Classic Rangefinder Camera"),
+        ProductDef(id: "p_replica_fragrance", name: "Replica Luxury Fragrance", category: .fashion, basePrice: 42, unlockLevel: .newcomer, icon: "drop.fill", volatility: 0, riskTier: 2, fixedPrice: true, isCounterfeit: true, publicAlias: "Reserve No. 8 Eau de Parfum"),
+        ProductDef(id: "p_replica_cards", name: "Reproduction Trading Cards", category: .collectibles, basePrice: 28, unlockLevel: .runner, icon: "rectangle.stack.fill", volatility: 0, riskTier: 3, fixedPrice: true, isCounterfeit: true, publicAlias: "First Edition Collector Cards"),
+        ProductDef(id: "p_replica_earbuds", name: "Replica Wireless Earbuds", category: .audio, basePrice: 24, unlockLevel: .newcomer, icon: "earbuds", volatility: 0, riskTier: 2, fixedPrice: true, isCounterfeit: true, publicAlias: "Studio Wireless Earbuds")
     ]
 
     static let cryptocurrencies: [CryptoDef] = [
@@ -201,7 +209,17 @@ enum GameData {
         NPCDef(id: "n_noor", name: "Noor Ahmed", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Avid reader and collector of first editions.", baseRatingSeed: 5),
         NPCDef(id: "n_finn", name: "Finn Taylor", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Building a studio and audio collection.", baseRatingSeed: 3),
         NPCDef(id: "n_gabriel", name: "Gabriel Chen", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Always interested in clever new technology.", baseRatingSeed: 4),
-        NPCDef(id: "n_cassia", name: "Cassia Reed", avatarSymbol: "person.crop.circle.fill", kind: .rival, bio: "A sharp reseller who knows the latest market prices.", baseRatingSeed: 2)
+        NPCDef(id: "n_cassia", name: "Cassia Reed", avatarSymbol: "person.crop.circle.fill", kind: .rival, bio: "A sharp reseller who knows the latest market prices.", baseRatingSeed: 2),
+        NPCDef(id: "n_reece", name: "Reece Vale", avatarSymbol: "person.crop.circle.badge.exclamationmark", kind: .seller, bio: "Replica goods at tempting prices. Quality varies.", baseRatingSeed: 2),
+        NPCDef(id: "n_marlow", name: "Marlow Finch", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Bargain hunter with an eye for fashion and watches.", baseRatingSeed: 3),
+        NPCDef(id: "n_kez", name: "Kez Alvarez", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Sneaker collector who buys in pairs and knows the market.", baseRatingSeed: 4),
+        NPCDef(id: "n_soraya", name: "Soraya Bell", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Fashion accessories, fragrance, and seasonal stock.", baseRatingSeed: 4),
+        NPCDef(id: "n_hugo", name: "Hugo Lin", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Buys tested cameras, audio, and small tech.", baseRatingSeed: 5),
+        NPCDef(id: "n_beck", name: "Beck Turner", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Cards, comics, and collector curiosities.", baseRatingSeed: 4),
+        NPCDef(id: "n_amelia", name: "Amelia Cross", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "A careful buyer who checks provenance before paying.", baseRatingSeed: 5),
+        NPCDef(id: "n_roman", name: "Roman Pike", avatarSymbol: "person.crop.circle.fill", kind: .seller, bio: "Small electronics and refurbished audio gear.", baseRatingSeed: 3),
+        NPCDef(id: "n_tess", name: "Tess Morgan", avatarSymbol: "person.crop.circle.fill", kind: .buyer, bio: "Vintage book and vinyl collector.", baseRatingSeed: 4),
+        NPCDef(id: "n_dorian", name: "Dorian Wells", avatarSymbol: "person.crop.circle.fill", kind: .rival, bio: "A patient trader who watches everyone's listings.", baseRatingSeed: 3)
     ]
 
     static let achievements: [AchievementDef] = [
@@ -222,7 +240,11 @@ enum GameData {
         AchievementDef(id: "a_5_contacts", title: "People Person", description: "Follow five contacts.", icon: "person.3.sequence.fill"),
         AchievementDef(id: "a_10_contacts", title: "Inner Circle", description: "Follow ten contacts.", icon: "person.3.fill"),
         AchievementDef(id: "a_5_products", title: "Collector’s Shelf", description: "Hold five different products at once.", icon: "square.grid.2x2.fill"),
-        AchievementDef(id: "a_3_coins", title: "Market Basket", description: "Hold three different simulated cryptocurrencies.", icon: "chart.pie.fill")
+        AchievementDef(id: "a_3_coins", title: "Market Basket", description: "Hold three different simulated cryptocurrencies.", icon: "chart.pie.fill"),
+        AchievementDef(id: "a_referrals", title: "Word Gets Around", description: "Earn five customer referrals.", icon: "person.2.wave.2.fill"),
+        AchievementDef(id: "a_trusted", title: "Trusted Seller", description: "Reach a 90 trust score.", icon: "checkmark.seal.fill"),
+        AchievementDef(id: "a_streak_7", title: "Seven-Day Run", description: "Check in seven days in a row.", icon: "calendar.badge.checkmark"),
+        AchievementDef(id: "a_counterfeit_clear", title: "Smooth Talker", description: "Pass a buyer's authenticity check.", icon: "eye.slash.fill")
     ]
 
     static func product(_ id: String) -> ProductDef? { products.first { $0.id == id } }

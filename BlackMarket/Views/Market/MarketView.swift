@@ -9,6 +9,7 @@ struct MarketView: View {
     @State private var selectedCategory: ProductCategory?
     @State private var selectedProduct: ProductDef?
     @State private var selectedCoinID: String?
+    @State private var chartDays = 30
 
     private var player: PlayerState? { players.first }
 
@@ -60,8 +61,17 @@ struct MarketView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Crypto Market").font(.headline)
             Text("Simulated coins · prices move once each night").font(.caption).foregroundStyle(.secondary)
+            Picker("Chart period", selection: $chartDays) {
+                Text("1W").tag(7)
+                Text("1M").tag(30)
+                Text("3M").tag(90)
+            }
+            .pickerStyle(.segmented)
             ForEach(GameData.cryptocurrencies, id: \.id) { coin in
-                let history = engine.priceHistory(for: coin.id)
+                let history = engine.priceHistory(for: coin.id, days: chartDays)
+                let percentChange = history.first.flatMap { first in
+                    history.last.map { last in first.price == 0 ? 0 : ((last.price / first.price) - 1) * 100 }
+                } ?? 0
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("\(coin.symbol)  \(coin.name)").font(.subheadline.bold())
@@ -69,6 +79,8 @@ struct MarketView: View {
                         Text(Formatters.moneyPrecise(engine.price(for: coin.id))).font(.subheadline.bold())
                         TrendArrow(trend: priceOverrides.first { $0.productID == coin.id }?.trend ?? 0)
                     }
+                    Text(history.count > 1 ? "\(chartDays)-day change  \(String(format: "%+.2f%%", percentChange))" : "Trend starts after the next daily close")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(history.count > 1 ? (percentChange >= 0 ? Color.green : Color.red) : Color.gray)
                     HStack {
                         Text("You own: \(String(format: "%.5f", engine.cryptoAmount(coin.id))) \(coin.symbol)").font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -154,12 +166,32 @@ struct PriceLineChart: View {
     var color: Color = .green
     var body: some View {
         Chart(history) { point in
-            LineMark(x: .value("Day", point.date), y: .value("Price", point.price))
-                .foregroundStyle(color.gradient).interpolationMethod(.catmullRom)
             AreaMark(x: .value("Day", point.date), y: .value("Price", point.price))
                 .foregroundStyle(color.opacity(0.12).gradient)
+            LineMark(x: .value("Day", point.date), y: .value("Price", point.price))
+                .foregroundStyle(color.gradient).interpolationMethod(.linear)
+            PointMark(x: .value("Day", point.date), y: .value("Price", point.price))
+                .foregroundStyle(color).symbolSize(16)
         }
-        .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 62)
+        .chartYScale(domain: .automatic(includesZero: false))
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine().foregroundStyle(.secondary.opacity(0.12))
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day(), centered: true)
+                    .font(.system(size: 9))
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, desiredCount: 3) { value in
+                AxisGridLine().foregroundStyle(.secondary.opacity(0.12))
+                AxisValueLabel {
+                    if let amount = value.as(Double.self) {
+                        Text(Formatters.moneyPrecise(amount)).font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(height: 112)
         .animation(.snappy(duration: 0.35), value: history.count)
     }
 }

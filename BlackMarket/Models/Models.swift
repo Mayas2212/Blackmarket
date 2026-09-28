@@ -17,6 +17,10 @@ final class PlayerState {
     var badges: [String]
     var levelRaw: Int
     var isDevModeUnlocked: Bool
+    var trustScoreRaw: Int?
+    var lastCheckIn: Date?
+    var loginStreakRaw: Int?
+    var referralCountRaw: Int?
 
     init(username: String = "you_underground",
          avatarSymbol: String = "person.crop.circle.fill",
@@ -29,7 +33,11 @@ final class PlayerState {
          joinDate: Date = .now,
          badges: [String] = [],
          levelRaw: Int = 0,
-         isDevModeUnlocked: Bool = false) {
+         isDevModeUnlocked: Bool = false,
+         trustScore: Int = 50,
+         lastCheckIn: Date? = nil,
+         loginStreak: Int = 0,
+         referralCount: Int = 0) {
         self.username = username
         self.avatarSymbol = avatarSymbol
         self.cashUSD = cashUSD
@@ -42,11 +50,27 @@ final class PlayerState {
         self.badges = badges
         self.levelRaw = levelRaw
         self.isDevModeUnlocked = isDevModeUnlocked
+        self.trustScoreRaw = trustScore
+        self.lastCheckIn = lastCheckIn
+        self.loginStreakRaw = loginStreak
+        self.referralCountRaw = referralCount
     }
 
     var level: SellerLevel {
         get { SellerLevel(rawValue: levelRaw) ?? .newcomer }
         set { levelRaw = newValue.rawValue }
+    }
+    var trustScore: Int {
+        get { trustScoreRaw ?? 50 }
+        set { trustScoreRaw = min(100, max(0, newValue)) }
+    }
+    var loginStreak: Int {
+        get { loginStreakRaw ?? 0 }
+        set { loginStreakRaw = max(0, newValue) }
+    }
+    var referralCount: Int {
+        get { referralCountRaw ?? 0 }
+        set { referralCountRaw = max(0, newValue) }
     }
 }
 
@@ -73,14 +97,16 @@ final class ListingItem {
     var createdAt: Date
     var isActive: Bool
     var saleCompletesAt: Date?
+    var claimedAsAuthentic: Bool?
 
-    init(productID: String, quantity: Int, price: Double, createdAt: Date = .now, isActive: Bool = true, saleCompletesAt: Date? = nil) {
+    init(productID: String, quantity: Int, price: Double, createdAt: Date = .now, isActive: Bool = true, saleCompletesAt: Date? = nil, claimedAsAuthentic: Bool = false) {
         self.productID = productID
         self.quantity = quantity
         self.price = price
         self.createdAt = createdAt
         self.isActive = isActive
         self.saleCompletesAt = saleCompletesAt
+        self.claimedAsAuthentic = claimedAsAuthentic
     }
 }
 
@@ -134,12 +160,14 @@ final class ReviewRecord {
     var rating: Int
     var text: String
     var date: Date
+    var isAboutPlayer: Bool?
 
-    init(npcID: String, rating: Int, text: String, date: Date = .now) {
+    init(npcID: String, rating: Int, text: String, date: Date = .now, isAboutPlayer: Bool = false) {
         self.npcID = npcID
         self.rating = rating
         self.text = text
         self.date = date
+        self.isAboutPlayer = isAboutPlayer
     }
 }
 
@@ -150,22 +178,28 @@ final class MessageRecord {
     var isFromPlayer: Bool
     var date: Date
     var offeredProductID: String?
+    var offeredPrice: Double?
     var listingProductID: String?
     var listingQuantity: Int?
     var listingPrice: Double?
     var listingCreatedAt: Date?
+    var deliveryState: Bool?
 
-    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now, offeredProductID: String? = nil, listingProductID: String? = nil, listingQuantity: Int? = nil, listingPrice: Double? = nil, listingCreatedAt: Date? = nil) {
+    init(npcID: String, text: String, isFromPlayer: Bool, date: Date = .now, offeredProductID: String? = nil, offeredPrice: Double? = nil, listingProductID: String? = nil, listingQuantity: Int? = nil, listingPrice: Double? = nil, listingCreatedAt: Date? = nil, isDelivered: Bool = true) {
         self.npcID = npcID
         self.text = text
         self.isFromPlayer = isFromPlayer
         self.date = date
         self.offeredProductID = offeredProductID
+        self.offeredPrice = offeredPrice
         self.listingProductID = listingProductID
         self.listingQuantity = listingQuantity
         self.listingPrice = listingPrice
         self.listingCreatedAt = listingCreatedAt
+        self.deliveryState = isDelivered
     }
+
+    var isDelivered: Bool { deliveryState ?? true }
 }
 
 // MARK: - Market
@@ -247,10 +281,16 @@ final class ShippingOrder {
     var isComplete: Bool
     var packageLost: Bool?
     var listingCreatedAt: Date?
-    init(npcID: String, productID: String, quantity: Int, unitPrice: Double, isSale: Bool, createdAt: Date = .now, arrivesAt: Date, isComplete: Bool = false, packageLost: Bool? = nil, listingCreatedAt: Date? = nil) {
+    var isMisrepresented: Bool?
+    var counterfeitDetected: Bool?
+    var reviewed: Bool?
+    init(npcID: String, productID: String, quantity: Int, unitPrice: Double, isSale: Bool, createdAt: Date = .now, arrivesAt: Date, isComplete: Bool = false, packageLost: Bool? = nil, listingCreatedAt: Date? = nil, isMisrepresented: Bool = false, counterfeitDetected: Bool = false, reviewed: Bool = false) {
         self.npcID = npcID; self.productID = productID; self.quantity = quantity; self.unitPrice = unitPrice
         self.isSale = isSale; self.createdAt = createdAt; self.arrivesAt = arrivesAt; self.isComplete = isComplete; self.packageLost = packageLost
         self.listingCreatedAt = listingCreatedAt
+        self.isMisrepresented = isMisrepresented
+        self.counterfeitDetected = counterfeitDetected
+        self.reviewed = reviewed
     }
 }
 

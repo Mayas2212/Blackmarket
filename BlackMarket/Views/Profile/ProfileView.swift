@@ -8,6 +8,8 @@ struct ProfileView: View {
     @Query private var achievementsAll: [AchievementRecord]
     @Query private var listingsAll: [ListingItem]
     @Query private var inventoryAll: [InventoryItem]
+    @Query private var messageRecords: [MessageRecord]
+    @Query private var shippingRecords: [ShippingOrder]
     @State private var tapCount = 0
     @State private var showCreateListing = false
     @State private var showSettings = false
@@ -52,11 +54,36 @@ struct ProfileView: View {
                 VStack { Text("\(player.following)").bold(); Text("Following").font(.caption2).foregroundStyle(.secondary) }
                 VStack { Text("\(player.reputation)").bold(); Text("Reputation").font(.caption2).foregroundStyle(.secondary) }
             }
-            Text("\(player.reputation >= 0 ? "★" : "☆")  Trust score · \(player.reputation)")
-                .font(.caption.bold()).foregroundStyle(player.reputation >= 0 ? .orange : .red)
+            HStack {
+                Label("Buyer trust", systemImage: "checkmark.seal.fill").font(.caption.bold())
+                Spacer()
+                Text("\(player.trustScore)/100 · \(trustLabel(player.trustScore))")
+                    .font(.caption.bold()).foregroundStyle(trustColor(player.trustScore))
+            }
+            ProgressView(value: Double(player.trustScore), total: 100).tint(trustColor(player.trustScore))
+            HStack(spacing: 6) {
+                Image(systemName: "flame.fill").foregroundStyle(.orange)
+                Text("\(player.loginStreak)-day check-in streak").font(.caption.bold())
+                Spacer()
+                Text("\(player.referralCount) referrals").font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Career reputation · \(player.reputation)").font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .cardStyle()
+    }
+
+    private func trustLabel(_ score: Int) -> String {
+        switch score {
+        case ..<25: "At risk"
+        case ..<50: "Rebuilding"
+        case ..<80: "Steady"
+        default: "Trusted"
+        }
+    }
+
+    private func trustColor(_ score: Int) -> Color {
+        score < 30 ? .red : (score < 65 ? .orange : .green)
     }
 
     private func statsRow() -> some View {
@@ -109,13 +136,15 @@ struct ProfileView: View {
             }
             ForEach(listingsAll) { listing in
                 if let product = GameData.product(listing.productID) {
+                    let status = listingStatus(listing)
                     HStack {
                         Image(systemName: product.icon).foregroundStyle(.green)
                         VStack(alignment: .leading) {
-                            Text(product.name).font(.subheadline.bold())
+                            Text(listing.claimedAsAuthentic == true && product.isCounterfeit ? (product.publicAlias ?? "Collector item") : product.name).font(.subheadline.bold())
                             Text("x\(listing.quantity) @ \(Formatters.moneyPrecise(listing.price))").font(.caption).foregroundStyle(.secondary)
-                            Text(listing.saleCompletesAt.map { "Expected buyer activity around \(Formatters.compactDate($0))" } ?? "Waiting for a buyer to find this listing")
-                                .font(.caption2).foregroundStyle(.secondary)
+                            if listing.claimedAsAuthentic == true { Text("Listed as authentic · verification risk").font(.caption2).foregroundStyle(.orange) }
+                            Text(status)
+                                .font(.caption2).foregroundStyle(status.contains("Offer") || status.contains("Message") ? .orange : .gray)
                         }
                         Spacer()
                         Button("Cancel") { engine.cancelListing(listing) }
@@ -125,6 +154,26 @@ struct ProfileView: View {
             }
         }
         .cardStyle()
+    }
+
+    private func listingStatus(_ listing: ListingItem) -> String {
+        if let order = shippingRecords.first(where: { $0.isSale && $0.listingCreatedAt == listing.createdAt && !$0.isComplete }) {
+            return "Shipping · arrives \(Formatters.compactDate(order.arrivesAt))"
+        }
+        let thread = messageRecords.filter { $0.listingCreatedAt == listing.createdAt }.sorted { $0.date < $1.date }
+        let latestOffer = thread.last(where: { !$0.isFromPlayer && $0.listingProductID == listing.productID })
+        if let latestOffer,
+           let lastPlayerReply = thread.last(where: { $0.isFromPlayer && $0.npcID == latestOffer.npcID && $0.date > latestOffer.date }),
+           lastPlayerReply.text.hasPrefix("Thanks, but I’ll pass") {
+            return "Offer declined · listing is still live"
+        }
+        if latestOffer?.isDelivered == true {
+            return "Offer received · open Messages to negotiate"
+        }
+        if let date = listing.saleCompletesAt, date > .now {
+            return "Waiting for buyer activity around \(Formatters.compactDate(date))"
+        }
+        return "Live · waiting for a buyer"
     }
 
     /// Tap the avatar 7 times to reveal the hidden developer/admin menu.
@@ -149,7 +198,10 @@ struct SettingsView: View {
     @AppStorage("blackmarket.darkMode") private var darkMode = false
     @AppStorage("blackmarket.accent") private var accent = "green"
     @AppStorage("blackmarket.devSettingsOn") private var devSettingsOn = false
+    @AppStorage("blackmarket.messageSounds") private var messageSounds = true
+    @AppStorage("blackmarket.buyerNotifications") private var buyerNotifications = false
     @State private var username = ""
+    @State private var confirmReset = false
     private var player: PlayerState? { players.first }
     private let avatars = ["person.crop.circle.fill", "person.fill", "person.crop.circle", "person.crop.square.fill", "theatermasks.fill", "star.circle.fill"]
     var body: some View {
@@ -167,6 +219,12 @@ struct SettingsView: View {
                         Text("Green").tag("green"); Text("Blue").tag("blue"); Text("Purple").tag("purple"); Text("Orange").tag("orange")
                     }
                 }
+                Section("Messages") {
+                    Toggle("Message sounds", isOn: $messageSounds)
+                    Toggle("Buyer notifications", isOn: $buyerNotifications)
+                    Text("Buyers can contact you about active profile listings while the app is closed. Notifications are delivered by iOS.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("Developer tools") {
                     if player?.isDevModeUnlocked == true {
                         Toggle("Enable developer settings", isOn: $devSettingsOn)
@@ -177,6 +235,9 @@ struct SettingsView: View {
                     }
                 }
                 Section { Text("Market prices update once per day. Crypto and game prices are simulated.").font(.caption).foregroundStyle(.secondary) }
+                Section("Game data") {
+                    Button("Reset game progress", role: .destructive) { confirmReset = true }
+                }
             }
             .navigationTitle("Settings")
             .toolbar {
@@ -184,6 +245,23 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save(); dismiss() } }
             }
             .onAppear { username = player?.username ?? "" }
+            .onChange(of: buyerNotifications) { _, enabled in
+                guard enabled else { MessageNotifications.cancelPending(); return }
+                Task {
+                    let allowed = await MessageNotifications.requestAuthorization()
+                    if allowed { engine.schedulePendingMessageNotifications() }
+                    else { buyerNotifications = false }
+                }
+            }
+            .confirmationDialog("Reset all progress?", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("Reset game", role: .destructive) {
+                    engine.adminResetAllData()
+                    username = engine.fetchPlayer().username
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This removes your cash, inventory, listings, contacts, messages, objectives, and achievements.")
+            }
             .preferredColorScheme(darkMode ? .dark : .light)
         }
     }
@@ -199,6 +277,7 @@ struct CreateListingView: View {
     @State private var selectedProductID: String?
     @State private var quantity = 1
     @State private var price: Double = 0
+    @State private var claimAsAuthentic = true
 
     private var items: [InventoryItem] { inventoryAll.filter { $0.quantity > 0 } }
     private var currentProductID: String { selectedProductID ?? items.first?.productID ?? "" }
@@ -218,6 +297,11 @@ struct CreateListingView: View {
                     }
                 }
                 Stepper("Quantity: \(quantity)", value: $quantity, in: 1...max(maxQty, 1))
+                if GameData.product(currentProductID)?.isCounterfeit == true {
+                    Toggle("List as authentic", isOn: $claimAsAuthentic)
+                    Text("A higher asking price can pay off, but buyers may inspect the item, reverse payment, and leave a poor review.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Text("Price per unit")
                     Spacer()
@@ -226,7 +310,7 @@ struct CreateListingView: View {
                         .multilineTextAlignment(.trailing)
                 }
                 Button("Create Listing") {
-                    if engine.createListing(productID: currentProductID, quantity: quantity, price: price) {
+                    if engine.createListing(productID: currentProductID, quantity: quantity, price: price, claimedAsAuthentic: claimAsAuthentic) {
                         engine.incrementObjectiveProgress(matching: { $0.objectiveID == "obj_listing" })
                         dismiss()
                     }
