@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftData
 
 /// Central gameplay engine. Owns all business logic that mutates persisted state.
