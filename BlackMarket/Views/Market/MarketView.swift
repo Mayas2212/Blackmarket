@@ -304,7 +304,7 @@ struct BuySheet: View {
             Stepper("Quantity: \(quantity)", value: $quantity, in: 1...99)
             Text("Storage: \(engine.storageUsed()) / \(engine.storageCapacity(for: player)) slots · incoming orders count too")
                 .font(.caption)
-                .foregroundStyle(engine.canStore(quantity) ? .secondary : .orange)
+                .foregroundStyle(engine.canStore(quantity) ? Color.secondary : Color.orange)
         }
     }
 
