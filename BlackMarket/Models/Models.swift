@@ -21,6 +21,7 @@ final class PlayerState {
     var lastCheckIn: Date?
     var loginStreakRaw: Int?
     var referralCountRaw: Int?
+    var storageLevelRaw: Int?
 
     init(username: String = "you_underground",
          avatarSymbol: String = "person.crop.circle.fill",
@@ -37,7 +38,8 @@ final class PlayerState {
          trustScore: Int = 50,
          lastCheckIn: Date? = nil,
          loginStreak: Int = 0,
-         referralCount: Int = 0) {
+         referralCount: Int = 0,
+         storageLevel: Int = 0) {
         self.username = username
         self.avatarSymbol = avatarSymbol
         self.cashUSD = cashUSD
@@ -54,6 +56,7 @@ final class PlayerState {
         self.lastCheckIn = lastCheckIn
         self.loginStreakRaw = loginStreak
         self.referralCountRaw = referralCount
+        self.storageLevelRaw = storageLevel
     }
 
     var level: SellerLevel {
@@ -71,6 +74,10 @@ final class PlayerState {
     var referralCount: Int {
         get { referralCountRaw ?? 0 }
         set { referralCountRaw = max(0, newValue) }
+    }
+    var storageLevel: Int {
+        get { storageLevelRaw ?? 0 }
+        set { storageLevelRaw = min(10, max(0, newValue)) }
     }
 }
 

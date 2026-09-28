@@ -25,6 +25,7 @@ struct NetworkView: View {
                         }
                         .buttonStyle(PressFeedbackStyle())
                     }
+                    Color.clear.frame(height: 88).listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
             }
             .navigationTitle("Network")
@@ -39,8 +40,37 @@ struct MessagesView: View {
     @Query(sort: \MessageRecord.date, order: .reverse) private var allMessages: [MessageRecord]
     @State private var selectedNPC: NPCDef?
 
+    private var latestMessageByContact: [String: MessageRecord] {
+        var latest: [String: MessageRecord] = [:]
+        for message in allMessages where message.isDelivered {
+            if (latest[message.npcID]?.date ?? .distantPast) < message.date {
+                latest[message.npcID] = message
+            }
+        }
+        return latest
+    }
+
     private var contactIDs: [String] {
-        Array(Set(followed.filter(\.isFollowing).map(\.npcID) + allMessages.filter(\.isDelivered).map(\.npcID))).sorted()
+        let latestDates = latestMessageByContact.mapValues(\.date)
+        let ids = Set(followed.filter(\.isFollowing).map(\.npcID) + Array(latestMessageByContact.keys))
+        return ids.sorted { first, second in
+            let firstDate = latestDates[first] ?? .distantPast
+            let secondDate = latestDates[second] ?? .distantPast
+            if firstDate != secondDate { return firstDate > secondDate }
+            return (GameData.npc(first)?.name ?? first) < (GameData.npc(second)?.name ?? second)
+        }
+    }
+
+    private func latestMessage(for id: String) -> MessageRecord? {
+        latestMessageByContact[id]
+    }
+
+    private func roleColor(for npc: NPCDef) -> Color {
+        switch npc.kind {
+        case .buyer: return .green
+        case .seller: return .blue
+        case .rival: return .orange
+        }
     }
 
     var body: some View {
@@ -57,8 +87,20 @@ struct MessagesView: View {
                                     Image(systemName: npc.avatarSymbol).font(.title2).foregroundStyle(.green)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(npc.name).font(.subheadline.bold()).foregroundStyle(.primary)
-                                        Text(allMessages.first(where: { $0.npcID == id && $0.isDelivered })?.text ?? npc.bio)
+                                        HStack(spacing: 6) {
+                                            Text(npc.kind.rawValue.capitalized)
+                                                .font(.system(size: 10, weight: .bold))
+                                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                                .background(roleColor(for: npc).opacity(0.12))
+                                                .foregroundStyle(roleColor(for: npc))
+                                                .clipShape(Capsule())
+                                            Text(latestMessage(for: id)?.text ?? npc.bio)
                                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                    if let message = latestMessage(for: id) {
+                                        Text(Formatters.compactDate(message.date))
+                                            .font(.caption2).foregroundStyle(.tertiary)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
@@ -68,6 +110,7 @@ struct MessagesView: View {
                             .buttonStyle(PressFeedbackStyle())
                         }
                     }
+                    Color.clear.frame(height: 88).listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
             }
             .navigationTitle("Messages")
@@ -181,7 +224,6 @@ struct NPCChatView: View {
             }
             .onChange(of: messages.count) { _, count in
                 if count > lastSeenMessageCount, messages.last?.isFromPlayer == false {
-                    MessageSounds.playReceived()
                     if action == .waitingForReply { action = pendingAction ?? .home; pendingAction = nil }
                     restoreDeal()
                 }
@@ -306,6 +348,10 @@ struct NPCChatView: View {
                 HStack(spacing: 8) { ProgressView(); Text("Waiting for \(npc.name)…").font(.subheadline).foregroundStyle(.secondary) }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
             } else if (action == .negotiatingPurchase || action == .readyToPurchase), let item = activeStock {
+                if !engine.canStore(purchaseQuantity) {
+                    Label("Storage full. Sell items or upgrade storage in Profile → My Shop.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Stepper(value: $purchaseQuantity, in: 1...max(item.quantity, 1)) {
                     HStack {
                         Text("Order quantity").font(.subheadline.weight(.medium))
@@ -382,14 +428,14 @@ struct NPCChatView: View {
                 quickButton("Back", icon: "chevron.left") { action = .home }
             case .negotiatingPurchase:
                 if let item = activeStock {
-                    quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(item.unitPrice * Double(purchaseQuantity)))", icon: "bag", enabled: (player?.cashUSD ?? 0) >= item.unitPrice * Double(purchaseQuantity)) { buyFromSeller(at: item.unitPrice) }
+                    quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(item.unitPrice * Double(purchaseQuantity)))", icon: "bag", enabled: (player?.cashUSD ?? 0) >= item.unitPrice * Double(purchaseQuantity) && engine.canStore(purchaseQuantity)) { buyFromSeller(at: item.unitPrice) }
                     quickButton("Offer 20% less / item", icon: "arrow.down", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.8) }
                     quickButton("Offer 10% less / item", icon: "arrow.down.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.9) }
                     quickButton("Offer 5% less / item", icon: "arrow.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.95) }
                     quickButton("Offer 2% less / item", icon: "arrow.up.right", enabled: negotiationCount < 4) { makeSellerOffer(item.unitPrice * 0.98) }
                 }
             case .readyToPurchase:
-                quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(agreedPrice * Double(purchaseQuantity)))", icon: "bag.fill", enabled: (player?.cashUSD ?? 0) >= agreedPrice * Double(purchaseQuantity)) { buyFromSeller(at: agreedPrice) }
+                quickButton("Buy \(purchaseQuantity) · \(Formatters.moneyPrecise(agreedPrice * Double(purchaseQuantity)))", icon: "bag.fill", enabled: (player?.cashUSD ?? 0) >= agreedPrice * Double(purchaseQuantity) && engine.canStore(purchaseQuantity)) { buyFromSeller(at: agreedPrice) }
                 quickButton("Back to stock", icon: "chevron.left") { action = .browsingStock }
             case .choosingItem:
                 if sellableItems.isEmpty { Text("You need inventory before offering an item.").font(.caption).foregroundStyle(.secondary) }

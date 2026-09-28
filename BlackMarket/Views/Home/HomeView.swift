@@ -23,6 +23,7 @@ struct HomeView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 100)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("BLACKMARKET")

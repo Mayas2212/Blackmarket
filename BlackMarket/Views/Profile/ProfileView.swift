@@ -28,6 +28,7 @@ struct ProfileView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 100)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Profile")
@@ -131,6 +132,34 @@ struct ProfileView: View {
                 .font(.caption.bold())
                 .disabled(inventoryAll.isEmpty)
             }
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Label("Storage", systemImage: "shippingbox")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(engine.storageUsed()) / \(engine.storageCapacity(for: player)) · Lv. \(player?.storageLevel ?? 0)")
+                        .font(.caption.bold().monospacedDigit())
+                        .foregroundStyle(engine.storageUsed() >= engine.storageCapacity(for: player) ? .orange : .secondary)
+                }
+                ProgressView(value: min(1, Double(engine.storageUsed()) / Double(max(engine.storageCapacity(for: player), 1))))
+                    .tint(engine.storageUsed() >= engine.storageCapacity(for: player) ? .orange : .green)
+                HStack {
+                    Text("On hand and incoming orders use space.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    if let player, player.storageLevel < 10 {
+                        let cost = engine.storageUpgradeCost(for: player)
+                        Button("Upgrade · \(Formatters.money(cost))") { _ = engine.upgradeStorage() }
+                            .font(.caption.bold())
+                            .disabled(player.cashUSD < cost)
+                    } else {
+                        Text("Max level").font(.caption.bold()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(11)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             if listingsAll.isEmpty {
                 Text("No active listings. List inventory to sell to the network.").font(.caption).foregroundStyle(.secondary)
             }
@@ -147,8 +176,9 @@ struct ProfileView: View {
                                 .font(.caption2).foregroundStyle(status.contains("Offer") || status.contains("Message") ? .orange : .gray)
                         }
                         Spacer()
-                        Button("Cancel") { engine.cancelListing(listing) }
+                        Button(engine.canStore(listing.quantity) ? "Cancel" : "Storage full") { _ = engine.cancelListing(listing) }
                             .font(.caption).foregroundStyle(.red)
+                            .disabled(!engine.canStore(listing.quantity))
                     }
                 }
             }

@@ -112,6 +112,39 @@ final class GameEngine {
         (try? context.fetch(FetchDescriptor<InventoryItem>())) ?? []
     }
 
+    func storageCapacity(for player: PlayerState? = nil) -> Int {
+        20 + (player ?? fetchPlayer()).storageLevel * 10
+    }
+
+    func storageUsed() -> Int {
+        let onHand = inventory().reduce(0) { $0 + $1.quantity }
+        let inbound = shippingOrders().filter { !$0.isSale }.reduce(0) { $0 + $1.quantity }
+        return onHand + inbound
+    }
+
+    func canStore(_ quantity: Int) -> Bool {
+        quantity >= 0 && storageUsed() + quantity <= storageCapacity()
+    }
+
+    func storageUpgradeCost(for player: PlayerState? = nil) -> Double {
+        let level = (player ?? fetchPlayer()).storageLevel
+        return 350 * pow(1.6, Double(level))
+    }
+
+    @discardableResult
+    func upgradeStorage() -> Bool {
+        let player = fetchPlayer()
+        guard player.storageLevel < 10 else { return false }
+        let cost = storageUpgradeCost(for: player)
+        guard player.cashUSD >= cost else { return false }
+        player.cashUSD -= cost
+        player.storageLevel += 1
+        context.insert(TransactionRecord(type: .event, total: -cost, note: "Storage upgraded to \(storageCapacity(for: player)) slots"))
+        checkAchievements()
+        try? context.save()
+        return true
+    }
+
     func listings() -> [ListingItem] {
         (try? context.fetch(FetchDescriptor<ListingItem>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))) ?? []
     }
@@ -202,7 +235,7 @@ final class GameEngine {
         let player = fetchPlayer()
         let finalPrice = unitPrice ?? stockItem.unitPrice
         let total = finalPrice * Double(quantity)
-        guard quantity > 0, stockItem.quantity >= quantity, player.cashUSD >= total else { return false }
+        guard quantity > 0, stockItem.quantity >= quantity, player.cashUSD >= total, canStore(quantity) else { return false }
         stockItem.quantity -= quantity
         player.cashUSD -= total
         let arrival = Date.now.addingTimeInterval(TimeInterval.random(in: 300...600))
@@ -301,7 +334,12 @@ final class GameEngine {
         let messages = (try? context.fetch(FetchDescriptor<MessageRecord>())) ?? []
         let due = messages.filter { !$0.isDelivered && $0.date <= .now }
         for message in due { message.deliveryState = true }
-        if !due.isEmpty { try? context.save() }
+        if !due.isEmpty {
+            try? context.save()
+            if due.contains(where: { !$0.isFromPlayer }) {
+                Task { @MainActor in MessageSounds.playReceived() }
+            }
+        }
         return due.count
     }
 
@@ -382,6 +420,9 @@ final class GameEngine {
                 status = order.isSale ? "\(productName) was delivered. Payment is in your balance." : "\(productName) arrived. It’s in your inventory."
             }
             context.insert(MessageRecord(npcID: order.npcID, text: status, isFromPlayer: false))
+        }
+        if !orders.isEmpty {
+            Task { @MainActor in MessageSounds.playReceived() }
         }
         checkAchievements()
         try? context.save()
@@ -470,7 +511,7 @@ final class GameEngine {
 
     @discardableResult
     func buy(productID: String, quantity: Int, supplier: SupplierDef?) -> Bool {
-        guard quantity > 0 else { return false }
+        guard quantity > 0, canStore(quantity) else { return false }
         let player = fetchPlayer()
         let basePrice = price(for: productID)
         let discount = supplier?.discount ?? 0
@@ -582,7 +623,9 @@ final class GameEngine {
         return true
     }
 
-    func cancelListing(_ listing: ListingItem) {
+    @discardableResult
+    func cancelListing(_ listing: ListingItem) -> Bool {
+        guard canStore(listing.quantity) else { return false }
         cancelQueuedListingOffers(listing)
         let allInv = inventory()
         if let existing = allInv.first(where: { $0.productID == listing.productID }) {
@@ -592,6 +635,7 @@ final class GameEngine {
         }
         context.delete(listing)
         try? context.save()
+        return true
     }
 
     private func cancelQueuedListingOffers(_ listing: ListingItem) {
@@ -815,6 +859,7 @@ final class GameEngine {
         if player.referralCount >= 5 { unlock("a_referrals") }
         if player.trustScore >= 90 { unlock("a_trusted") }
         if player.loginStreak >= 7 { unlock("a_streak_7") }
+        if player.storageLevel >= 5 { unlock("a_storage_5") }
         if transactions().contains(where: { $0.type == .event && $0.note == "Claim cleared after delivery" }) { unlock("a_counterfeit_clear") }
     }
 

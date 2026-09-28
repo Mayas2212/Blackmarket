@@ -13,11 +13,14 @@ enum MessageSounds {
         guard enabled else { return }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.ambient, options: [.mixWithOthers])
-            try session.setActive(true)
+            // Ambient audio is silenced by the iPhone's silent switch. Chat cues
+            // should remain audible when the in-app sound setting is enabled.
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: [])
             if players[name] == nil,
                let url = Bundle.main.url(forResource: name, withExtension: "wav") {
                 players[name] = try AVAudioPlayer(contentsOf: url)
+                players[name]?.volume = 1
                 players[name]?.prepareToPlay()
             }
             players[name]?.currentTime = 0

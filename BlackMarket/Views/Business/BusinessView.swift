@@ -24,6 +24,7 @@ struct BusinessView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 100)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Business")

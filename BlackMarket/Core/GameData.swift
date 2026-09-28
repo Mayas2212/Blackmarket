@@ -244,7 +244,8 @@ enum GameData {
         AchievementDef(id: "a_referrals", title: "Word Gets Around", description: "Earn five customer referrals.", icon: "person.2.wave.2.fill"),
         AchievementDef(id: "a_trusted", title: "Trusted Seller", description: "Reach a 90 trust score.", icon: "checkmark.seal.fill"),
         AchievementDef(id: "a_streak_7", title: "Seven-Day Run", description: "Check in seven days in a row.", icon: "calendar.badge.checkmark"),
-        AchievementDef(id: "a_counterfeit_clear", title: "Smooth Talker", description: "Pass a buyer's authenticity check.", icon: "eye.slash.fill")
+        AchievementDef(id: "a_counterfeit_clear", title: "Smooth Talker", description: "Pass a buyer's authenticity check.", icon: "eye.slash.fill"),
+        AchievementDef(id: "a_storage_5", title: "Warehouse Upgrade", description: "Expand storage to level 5.", icon: "shippingbox.fill")
     ]
 
     static func product(_ id: String) -> ProductDef? { products.first { $0.id == id } }

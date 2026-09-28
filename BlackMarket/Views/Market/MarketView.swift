@@ -41,6 +41,7 @@ struct MarketView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 100)
                 .animation(.snappy(duration: 0.28), value: availableProducts.map(\.id))
             }
             .background(Color(.systemGroupedBackground))
@@ -274,6 +275,8 @@ struct BuySheet: View {
                 }
                 Section("Quantity") {
                     Stepper("Quantity: \(quantity)", value: $quantity, in: 1...99)
+                    Text("Storage: \(engine.storageUsed()) / \(engine.storageCapacity(for: player)) slots · incoming orders count too")
+                        .font(.caption).foregroundStyle(engine.canStore(quantity) ? .secondary : .orange)
                 }
                 Section {
                     HStack {
@@ -291,7 +294,7 @@ struct BuySheet: View {
                     } label: {
                         Text("Confirm Purchase").frame(maxWidth: .infinity).bold()
                     }
-                    .disabled((player?.cashUSD ?? 0) < total)
+                    .disabled((player?.cashUSD ?? 0) < total || !engine.canStore(quantity))
                 }
             }
             .navigationTitle("Buy")
