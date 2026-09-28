@@ -205,7 +205,10 @@ final class GameEngine {
         stockItem.quantity -= quantity
         player.cashUSD -= total
         let arrival = Date.now.addingTimeInterval(TimeInterval.random(in: 300...600))
-        context.insert(ShippingOrder(npcID: npcID, productID: stockItem.productID, quantity: quantity, unitPrice: finalPrice, isSale: false, arrivesAt: arrival))
+        let order = ShippingOrder(npcID: npcID, productID: stockItem.productID, quantity: quantity, unitPrice: finalPrice, isSale: false, arrivesAt: arrival)
+        context.insert(order)
+        scheduleShippingProcessing(at: arrival)
+        MessageNotifications.schedule(npcName: GameData.npc(npcID)?.name ?? "Seller", text: "Your order's delivery update is expected soon.", at: arrival, identifier: shippingNotificationID(for: order))
         context.insert(TransactionRecord(type: .buy, productID: stockItem.productID, quantity: quantity, unitPrice: finalPrice, total: -total, note: "Bought from contact; shipping"))
         incrementObjectiveProgress(matching: { $0.objectiveID == "obj_contactbuy" })
         try? context.save()
@@ -233,7 +236,10 @@ final class GameEngine {
             item.quantity -= quantity
             if item.quantity == 0 { context.delete(item) }
         }
-        context.insert(ShippingOrder(npcID: npcID, productID: productID, quantity: quantity, unitPrice: unitPrice, isSale: true, arrivesAt: due, listingCreatedAt: listingCreatedAt, isMisrepresented: isMisrepresented))
+        let order = ShippingOrder(npcID: npcID, productID: productID, quantity: quantity, unitPrice: unitPrice, isSale: true, arrivesAt: due, listingCreatedAt: listingCreatedAt, isMisrepresented: isMisrepresented)
+        context.insert(order)
+        scheduleShippingProcessing(at: due)
+        MessageNotifications.schedule(npcName: GameData.npc(npcID)?.name ?? "Buyer", text: "Your buyer's delivery update is expected soon.", at: due, identifier: shippingNotificationID(for: order))
         context.insert(TransactionRecord(type: .event, productID: productID, quantity: quantity, total: 0, note: "Packed order for \(GameData.npc(npcID)?.name ?? "customer")"))
         incrementObjectiveProgress(matching: { $0.objectiveID == "obj_ship" })
         try? context.save()
@@ -242,6 +248,18 @@ final class GameEngine {
 
     func shippingOrders() -> [ShippingOrder] {
         (try? context.fetch(FetchDescriptor<ShippingOrder>()))?.filter { !$0.isComplete } ?? []
+    }
+
+    private func scheduleShippingProcessing(at date: Date) {
+        let delay = max(0, date.timeIntervalSinceNow)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay + 0.05))
+            self?.processShipping()
+        }
+    }
+
+    private func shippingNotificationID(for order: ShippingOrder) -> String {
+        "shipping-\(order.createdAt.timeIntervalSince1970)"
     }
 
     @discardableResult
@@ -307,6 +325,7 @@ final class GameEngine {
     private func processShipping() {
         let orders = shippingOrders().filter { $0.arrivesAt <= .now }
         for order in orders {
+            MessageNotifications.cancel(identifier: shippingNotificationID(for: order))
             let lost = Double.random(in: 0..<1) < 0.05
             let product = GameData.product(order.productID)
             let buyerRating = GameData.npc(order.npcID)?.baseRatingSeed ?? 3

@@ -237,8 +237,12 @@ struct NPCChatView: View {
                     HStack(spacing: 7) {
                         ForEach(1...5, id: \.self) { stars in
                             Button { engine.reviewPurchase(order, stars: stars) } label: {
-                                Image(systemName: "star.fill").foregroundStyle(stars <= 3 ? .orange : .yellow)
-                                    .frame(width: 32, height: 30).background(Color.orange.opacity(0.09)).clipShape(Capsule())
+                                HStack(spacing: 3) {
+                                    Image(systemName: "star.fill")
+                                    Text("\(stars)").font(.caption2.bold())
+                                }
+                                .foregroundStyle(stars < 3 ? Color.red : (stars == 3 ? Color.orange : Color.yellow))
+                                .frame(width: 38, height: 30).background(Color.orange.opacity(0.09)).clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Rate seller \(stars) stars")
